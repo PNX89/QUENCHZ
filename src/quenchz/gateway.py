@@ -53,6 +53,11 @@ class Gateway:
         self._budget = budget
         self._transport = transport
 
+    @property
+    def budget(self) -> FairBudget:
+        """The one budget, so the transport boundary charges the same one the gateway does."""
+        return self._budget
+
     def call(self, name: str, caller: Caller, arguments: dict[str, Any]) -> Any:
         # First, always, and before anything that could depend on `name`. See the module
         # docstring: making a refusal free is the same leak as making it descriptive.
