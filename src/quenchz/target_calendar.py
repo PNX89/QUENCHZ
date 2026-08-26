@@ -44,6 +44,7 @@ __all__ = [
     "ANNUAL_CLOSURES_FROM",
     "PLACEHOLDER_ROWS_END",
     "PUBLICATION_HOUR_LOCAL",
+    "SERIES_BEGINS",
     "SPECIAL_CLOSURES",
     "ClosingReason",
     "closing_reason",
@@ -75,6 +76,10 @@ class ClosingReason(StrEnum):
 # row counts for one series knows why.
 PLACEHOLDER_ROWS_END = datetime.date(2012, 5, 1)
 
+# The first date this series carries a value. Before it nothing was ever due, which is a
+# different answer from "the market was shut" and is reported as such.
+SERIES_BEGINS = datetime.date(1999, 1, 4)
+
 # Two closures no annual rule produces, both confirmed by the vendor's own OBS_STATUS of H.
 # TARGET ran on national calendars in its first year, so the annual rules start here. The
 # evidence is two real rates on Good Friday and Easter Monday 1999 and none in any later year.
@@ -95,9 +100,16 @@ PUBLICATION_HOUR_LOCAL = 16
 def easter_sunday(year: int) -> datetime.date:
     """Easter Sunday in the Gregorian calendar, by the anonymous algorithm.
 
-    Good Friday and Easter Monday are the only two closing days that move, and they are also
-    the two most common absences in the series, at fourteen each. Everything else is a fixed
-    date, so this function is the whole of the hard part of the calendar.
+    Good Friday and Easter Monday are the only two closing days that move, at 27 absences each
+    across this series. Everything else is a fixed date, so this function is the whole of the
+    hard part of the calendar.
+
+    The first version of this paragraph said "the two most common absences, at fourteen each",
+    and both halves were wrong. Fourteen was left over from counting missing ROWS before the
+    2012 encoding change, and survived the correction to counting missing VALUES that doubled
+    it. And they were never the most common absence by any measure: weekends are, at 2,884.
+    `test_target_calendar.py` now recomputes both numbers, because a number in a docstring that
+    nothing recomputes is a number that goes stale the first time the method under it changes.
     """
     a = year % 19
     b, c = divmod(year, 100)
