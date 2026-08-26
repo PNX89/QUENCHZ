@@ -7,10 +7,24 @@ document, and then checked against the vendor's documentation. The derivation is
 
 Two facts here are not obvious and both cost a naive implementation real accuracy.
 
-THE CALENDAR CHANGED. The ECB published reference rates on TARGET closing days until
-December 2012. The last holiday it published on is 1 May 2012; the first it closed for is
-25 December 2012. A rule set that explains every absence since 2013 explains none of them
-before it, so applying today's calendar to 2010 data reports gaps that are not gaps.
+THE ENCODING CHANGED, NOT THE CALENDAR. This one was found the hard way, by writing a client
+that counted rows and getting a number 62 larger than the one that counted values. Until
+1 May 2012 the ECB emitted a ROW for each closing day carrying an empty `OBS_VALUE` and
+`OBS_STATUS` of `H`. After that date it emits no row at all. The calendar behind both is the
+same and always has been. So a client that decides what arrived by counting ROWS is right
+after 2012 and silently wrong before it, and the field that tells it so, `OBS_STATUS`, exists
+in the old era and simply is not there in the new one.
+
+TWO CLOSURES ARE NOT ANNUAL. 31 December 1999 and 31 December 2001 carry `OBS_STATUS` of `H`
+and no value, and no annual rule explains either. They are the millennium changeover and the
+euro cash changeover, each a one-off TARGET closure. Two special days in twenty-seven years
+is exactly the kind of thing a rule set derived from three years of data would miss.
+
+AND 1999 IS ITS OWN ERA, WHICH THE OTHER DIRECTION OF THE TEST FOUND. Good Friday and Easter
+Monday 1999, the 2nd and 5th of April, carry real rates: TARGET's first year ran on national
+calendars and had no harmonised closing days, and the six-day calendar applies from 2000. It
+is two days out of seven thousand, it would never have been noticed by sampling, and it was
+caught only because the suite also requires that every day carrying a rate is called open.
 
 THE PAYLOAD CARRIES THE WRONG TIME. Each observation's `TITLE_COMPL` reads "ECB reference
 exchange rate, US dollar/Euro, 2.15 pm (C.E.T.)". That is the moment the rate REFERS TO. It
@@ -27,8 +41,10 @@ import datetime
 from enum import StrEnum
 
 __all__ = [
-    "CALENDAR_IN_FORCE_FROM",
+    "ANNUAL_CLOSURES_FROM",
+    "PLACEHOLDER_ROWS_END",
     "PUBLICATION_HOUR_LOCAL",
+    "SPECIAL_CLOSURES",
     "ClosingReason",
     "closing_reason",
     "easter_sunday",
@@ -50,13 +66,24 @@ class ClosingReason(StrEnum):
     LABOUR_DAY = "labour-day"
     CHRISTMAS_DAY = "christmas-day"
     SAINT_STEPHENS_DAY = "26-december"
+    SPECIAL_CLOSURE = "special-closure"
 
 
-# The first TARGET closing day this series actually honours. Derived, not looked up: the
-# series publishes a rate on every earlier holiday, including Good Friday 2012 and 1 May
-# 2012, and stops at Christmas. A test pins both sides of this boundary, because it is the
-# one constant here that a reader would otherwise assume has always been true.
-CALENDAR_IN_FORCE_FROM = datetime.date(2012, 12, 25)
+# The last day the vendor emitted a placeholder row for a closure. This is NOT a calendar
+# boundary: the calendar is the same on both sides of it. It is the boundary between two ways
+# of saying the same thing, and it exists here only so that a reader who finds two different
+# row counts for one series knows why.
+PLACEHOLDER_ROWS_END = datetime.date(2012, 5, 1)
+
+# Two closures no annual rule produces, both confirmed by the vendor's own OBS_STATUS of H.
+# TARGET ran on national calendars in its first year, so the annual rules start here. The
+# evidence is two real rates on Good Friday and Easter Monday 1999 and none in any later year.
+ANNUAL_CLOSURES_FROM = datetime.date(2000, 1, 1)
+
+SPECIAL_CLOSURES: dict[datetime.date, str] = {
+    datetime.date(1999, 12, 31): "millennium changeover",
+    datetime.date(2001, 12, 31): "euro cash changeover",
+}
 
 # "around 16:00 CET", from the ECB's own page, and deliberately not the 14:15 the payload
 # reports. The hour is local Frankfurt time, which is CET in winter and CEST in summer; the
@@ -88,12 +115,14 @@ def easter_sunday(year: int) -> datetime.date:
 def closing_reason(day: datetime.date) -> ClosingReason | None:
     """Why no rate is expected on `day`, or None if one is.
 
-    Weekends apply for the whole series. The six holidays apply only from
-    `CALENDAR_IN_FORCE_FROM`, because before that date the ECB published on them.
+    Weekends and the two special closures apply across the whole series. The six annual
+    holidays apply from 2000, because TARGET's first year had no harmonised calendar.
     """
     if day.weekday() >= 5:
         return ClosingReason.WEEKEND
-    if day < CALENDAR_IN_FORCE_FROM:
+    if day in SPECIAL_CLOSURES:
+        return ClosingReason.SPECIAL_CLOSURE
+    if day < ANNUAL_CLOSURES_FROM:
         return None
 
     easter = easter_sunday(day.year)
