@@ -1,0 +1,46 @@
+QUENCHZ  what a tool server has to decide once it stops being a subprocess
+
+AUDIENCE  a token is only good at the door it was minted for
+------------------------------------------------------------------------------
+  minted for this resource               ACCEPTED
+  minted for another resource            refused
+  minted for this resource AND another   refused
+  minted with no audience at all         refused
+  signed by an issuer we do not trust    refused
+
+  Every one of these is correctly signed, unexpired and carries the right scope.
+
+REACH  a caller cannot learn what it may not use
+------------------------------------------------------------------------------
+  tools this caller can see:  ['calendar.why', 'rates.window']
+  tools that actually exist:  ['calendar.why', 'rates.window', 'series.catalogue']
+
+  asking for one it may not use:  'no tool by that name is available to this caller'
+  asking for one that never was:  'no tool by that name is available to this caller'
+  identical bytes:                True
+
+BUDGET  one burst cannot touch another caller's reserve
+------------------------------------------------------------------------------
+  design                              greedy   quiet
+  one shared bucket                       60       0
+  a reserve each, plus a spare            45      15
+
+  The vendor publishes no rate limit, no rate-limit header, and does not list 429
+  among its status codes, so this budget is self-imposed and reacts to nothing.
+
+COVERAGE  every answer says what it did not deliver
+------------------------------------------------------------------------------
+  requested   12 calendar days, 2026-03-30 to 2026-04-10
+  expected    8
+  delivered   8
+  absent, target_closed        4
+  absent, not_yet_published    0
+  absent, no_such_observation  0
+  absent, before_the_series    0
+
+  complete: True
+  Four days are missing and none of them is a gap. Good Friday, Easter Monday and
+  the weekend are closures, and the vendor's payload says nothing about any of them.
+
+------------------------------------------------------------------------------
+Source: ECB statistics.
