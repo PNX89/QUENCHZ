@@ -41,13 +41,25 @@ PUBLICATION_GRACE = datetime.timedelta(hours=1)
 class Absence(StrEnum):
     """Why an expected observation is not in the body.
 
-    Three named causes, and a fourth that this module has not thought of would be counted
-    under NO_SUCH_OBSERVATION. The README says so rather than claiming the list is complete.
+    Four named causes. A fifth this module has not thought of would be counted under
+    NO_SUCH_OBSERVATION, and the README says so rather than claiming the list is complete.
+
+    BEFORE_THE_SERIES was the third of the four and it was added late, after a review asked for
+    a window in 1990. The euro did not exist in 1990, so nothing was ever due, and the
+    certificate answered `expected_observations: 261` with all 261 filed under
+    NO_SUCH_OBSERVATION, whose documented meaning is that somebody should know. It is the worst
+    available answer: a confident report of 261 missing rates on days when none was owed. It is
+    also reachable straight from a tool argument, since `rates.window` parses a caller's dates
+    with no window validation.
+
+    "The market was shut" and "this series had not started" are different answers, so this is a
+    member of its own rather than being folded into TARGET_CLOSED.
     """
 
     TARGET_CLOSED = "target_closed"
     NOT_YET_PUBLISHED = "not_yet_published"
     NO_SUCH_OBSERVATION = "no_such_observation"
+    BEFORE_THE_SERIES = "before_the_series"
 
 
 class Coverage(BaseModel):
@@ -69,7 +81,12 @@ class Coverage(BaseModel):
 
     @property
     def complete(self) -> bool:
-        """True only when every observation the calendar expects actually arrived."""
+        """True only when every observation the calendar expects actually arrived.
+
+        A window entirely before the series began is complete, because nothing was expected.
+        That reads oddly until you consider the alternative, which is calling a window
+        incomplete for failing to deliver rates that never existed.
+        """
         return self.delivered_observations == self.expected_observations
 
 
@@ -121,12 +138,17 @@ def reconstruct(
     requested_to: datetime.date,
     delivered: set[datetime.date],
     now: datetime.datetime,
+    series_begins: datetime.date | None = None,
 ) -> Coverage:
     """Build the certificate for one response.
 
     `delivered` is the set of dates actually present in the body. `now` is passed in rather
     than read from the clock, because a certificate that consults a global clock cannot be
     tested against the afternoon it is describing.
+
+    `series_begins` is the first date this series ever carried a value. It is passed in for the
+    same reason as the clock: the caller knows it and this function cannot. Leaving it None is
+    honest rather than convenient, and says only that the lower bound is unknown here.
     """
     if requested_to < requested_from:
         raise ValueError(f"window ends before it starts: {requested_from} to {requested_to}")
@@ -139,6 +161,10 @@ def reconstruct(
     while day <= requested_to:
         if day in delivered:
             expected += 1
+        elif series_begins is not None and day < series_begins:
+            # Nothing was ever due here, so it is neither a gap nor a closure, and it does not
+            # count towards what was expected.
+            absent[Absence.BEFORE_THE_SERIES] += 1
         elif closing_reason(day) is None:
             expected += 1
             absent[_classify(day, now)] += 1
