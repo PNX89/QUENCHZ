@@ -16,8 +16,18 @@ prefix, truthiness and expiry, and hands `AccessToken.resource` through without 
 it. `AudienceRestrictedVerifier` is what makes a token minted for another resource useless
 here.
 
-EVERY TOOL RETURN CARRIES A COVERAGE CERTIFICATE. It is a required field with no default, so a
-tool cannot answer without saying what it did not deliver.
+EVERY TOOL THAT RETURNS OBSERVATIONS CARRIES A COVERAGE CERTIFICATE, and the other two say
+plainly that they do not. The first draft of this line claimed every tool return carried one,
+and a review pointed out that two of the three do not, which made a headline claim false in the
+module that wires it up.
+
+The claim was wrong rather than the code. A coverage certificate answers "how much of the
+window you asked for actually arrived", and neither of the other tools is answering about a
+window: `calendar.why` classifies one date, and `series.catalogue` lists what exists. Attaching
+a certificate to either would be a field with nothing to say, which is worse than no field,
+because a reader would believe it meant something. `test_server.py` enforces the narrowed rule
+structurally rather than trusting this paragraph: any tool return containing `observations`
+must also contain `coverage`.
 
 RUNNING OUT OF BUDGET IS AN EXPECTED ANSWER, NOT A CRASH. This was found by running the
 TypeScript proofs and watching the server's own output: the SDK logs a full stack trace for any
