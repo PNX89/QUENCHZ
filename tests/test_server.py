@@ -199,3 +199,41 @@ def test_a_tool_that_returns_observations_also_returns_a_certificate(issuer: Iss
         "if this ever gains a certificate, the narrowed claim in server.py must be widened "
         "back rather than left describing something that is no longer true"
     )
+
+
+async def test_calendar_why_does_not_claim_a_rate_existed_before_the_series(issuer: Issuer) -> None:
+    """1 January 1999 is three days before the first row, and it used to read as an open day.
+
+    `closing_reason` returns None for every pre-2000 weekday, because the annual rules start in
+    2000, so without a lower bound this tool answered "no reason, a rate was published" for a
+    date on which the series did not exist.
+    """
+    from quenchz.budget import ManualClock
+
+    app = build_app(issuer, clock=ManualClock())
+    async with app.router.lifespan_context(app):
+        transport = httpx2.ASGITransport(app=app)
+        async with httpx2.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
+            headers = dict(HEADERS)
+            headers["Authorization"] = (
+                f"Bearer {issuer.mint(client_id='agent-alpha', scopes=['rates:read'])}"
+            )
+            opened = await client.post("/mcp", json=INITIALIZE, headers=headers)
+            headers["mcp-session-id"] = opened.headers["mcp-session-id"]
+            await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+                headers=headers,
+            )
+            answer = await client.post(
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 9,
+                    "method": "tools/call",
+                    "params": {"name": "calendar.why", "arguments": {"day": "1999-01-01"}},
+                },
+                headers=headers,
+            )
+    assert "before_the_series" in answer.text
+    assert '"closed_because": null' not in answer.text
