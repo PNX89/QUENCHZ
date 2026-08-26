@@ -1,0 +1,25 @@
+{
+  // `strict` is on and stays on, plus two checks it does not include: unchecked index access
+  // and implicit override. `exactOptionalPropertyTypes` is deliberately NOT enabled. It is not
+  // part of `strict` for a reason, much of the ecosystem is not written for it, and the MCP
+  // SDK is among them: its Transport interface declares `sessionId?: string` while the
+  // Streamable HTTP transport implements it as `string | undefined`, which that flag rejects.
+  // Turning it on and then casting round the error would be strictness for the look of it.
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "declaration": false,
+    "sourceMap": false,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts"]
+}
