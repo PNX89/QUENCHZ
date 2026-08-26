@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something in QUARANTINEZ does not behave as documented
+about: Something in QUENCHZ does not behave as documented
 labels: bug
 ---
 
