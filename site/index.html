@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUENCHZ</title>
+<meta name="description" content="deciding in the open what a tool server gets free while it is still somebody's subprocess">
+<style>
+  /* Light is defined on bare :root so a viewer with no preference gets a complete palette,
+     and only the tokens that differ are redefined for dark. */
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfbfa; --fg: #1a1a18; --muted: #55554e; --rule: #dedcd4;
+    --term-bg: #f4f3ee; --term-fg: #23231f; --accent: #7a4b12;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a; --fg: #e9e8e3; --muted: #a2a19a; --rule: #2e2e34;
+      --term-bg: #101014; --term-fg: #dcdbd4; --accent: #d9a441;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 3rem 1.25rem 5rem;
+    background: var(--bg); color: var(--fg);
+    font: 16px/1.65 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size: 2.25rem; letter-spacing: -0.02em; margin: 0 0 .35rem; }
+  .blurb { color: var(--muted); margin: 0 0 2rem; font-size: 1.05rem; }
+  .claim { font-size: 1.2rem; line-height: 1.5; margin: 0 0 2rem; border-left: 3px solid var(--accent); padding-left: 1rem; }
+  .facts { display: flex; flex-wrap: wrap; gap: 1.5rem; padding: 1rem 0; margin: 0 0 2rem;
+           border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+  .facts div { font-size: .9rem; }
+  .facts dt { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .07em; }
+  .facts dd { margin: .15rem 0 0; font-variant-numeric: tabular-nums; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+       margin: 2.5rem 0 .5rem; font-weight: 600; }
+  .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem;
+         color: var(--muted); margin: 0 0 .5rem; }
+  /* Wide output scrolls inside its own box. The page body never scrolls sideways. */
+  pre { background: var(--term-bg); color: var(--term-fg); padding: 1.25rem; border-radius: 6px;
+        overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .8rem; line-height: 1.5; margin: 0; }
+  .note { color: var(--muted); font-size: .82rem; margin: .6rem 0 0; }
+  ul { list-style: none; padding: 0; margin: .5rem 0 0; }
+  li { padding: .35rem 0; border-bottom: 1px solid var(--rule); }
+  li span { color: var(--muted); font-size: .88rem; }
+  a { color: inherit; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+  a:hover { color: var(--accent); }
+  footer { margin-top: 3.5rem; padding-top: 1.25rem; border-top: 1px solid var(--rule);
+           color: var(--muted); font-size: .82rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>QUENCHZ</h1>
+  <p class="blurb">deciding in the open what a tool server gets free while it is still somebody's subprocess.</p>
+
+  <p class="claim">A stdio MCP server gets four things free from having one caller who shares its context. Once the transport is remote each becomes a decision, and this takes all four in the open and proves them from outside the Python tree.</p>
+
+  <dl class="facts">
+    <div><dt>Tests</dt><dd>132</dd></div>
+    <div><dt>Python</dt><dd>3.11 to 3.13</dd></div>
+    <div><dt>Release</dt><dd>v0.1.0</dd></div>
+    <div><dt>Licence</dt><dd>MIT</dd></div>
+  </dl>
+
+  <h2>The demo, as it really ran</h2>
+  <p class="cmd">$ uv run python examples/two_callers.py</p>
+  <pre>QUENCHZ  what a tool server has to decide once it stops being a subprocess
+
+AUDIENCE  a token is only good at the door it was minted for
+------------------------------------------------------------------------------
+  minted for this resource               ACCEPTED
+  minted for another resource            refused
+  minted for this resource AND another   refused
+  minted with no audience at all         refused
+  signed by an issuer we do not trust    refused
+
+  Every one of these is correctly signed, unexpired and carries the right scope.
+
+REACH  a caller cannot learn what it may not use
+------------------------------------------------------------------------------
+  tools this caller can see:  ['calendar.why', 'rates.window']
+  tools that actually exist:  ['calendar.why', 'rates.window', 'series.catalogue']
+
+  asking for one it may not use:  'no tool by that name is available to this caller'
+  asking for one that never was:  'no tool by that name is available to this caller'
+  identical bytes:                True
+
+BUDGET  one burst cannot touch another caller's reserve
+------------------------------------------------------------------------------
+  design                              greedy   quiet
+  one shared bucket                       60       0
+  a reserve each, plus a spare            45      15
+
+  The vendor publishes no rate limit, no rate-limit header, and does not list 429
+  among its status codes, so this budget is self-imposed and reacts to nothing.
+
+COVERAGE  every answer says what it did not deliver
+------------------------------------------------------------------------------
+  requested   12 calendar days, 2026-03-30 to 2026-04-10
+  expected    8
+  delivered   8
+  absent, target_closed        4
+  absent, not_yet_published    0
+  absent, no_such_observation  0
+  absent, before_the_series    0
+
+  complete: True
+  Four days are missing and none of them is a gap. Good Friday, Easter Monday and
+  the weekend are closures, and the vendor's payload says nothing about any of them.
+
+------------------------------------------------------------------------------
+Source: ECB statistics.</pre>
+  <p class="note">Output captured on 2026-08-26. It is committed to the repository and a test fails when it
+    stops matching a live run, so this page cannot quietly drift from the code it describes.</p>
+
+  <h2>Read it</h2>
+  <ul>
+    <li><a href="https://github.com/PNX89/QUENCHZ">Source on GitHub</a> <span>the README carries the argument in full</span></li>
+    <li><a href="https://github.com/PNX89/QUENCHZ/releases/tag/v0.1.0">Release v0.1.0</a> <span>changelog and tag</span></li>
+  </ul>
+
+  <h2>The rest of the toolset</h2>
+  <ul>
+      <li><a href="https://pnx89.github.io/QUACKZ/">QUACKZ</a> <span>deflating a backtest that only looks good because it was picked out of two hundred</span></li>
+      <li><a href="https://pnx89.github.io/QUOTEZ/">QUOTEZ</a> <span>market data an agent can read and cannot act on</span></li>
+      <li><a href="https://pnx89.github.io/QUELLZ/">QUELLZ</a> <span>measuring what prompt-injection containment costs in utility as well as in attack rate</span></li>
+      <li><a href="https://pnx89.github.io/QUIDZ/">QUIDZ</a> <span>refusing the outbound payment that would have gone out twice</span></li>
+      <li><a href="https://pnx89.github.io/QUESTZ/">QUESTZ</a> <span>stopping a scraper before it writes a CSV from a page that changed shape</span></li>
+      <li><a href="https://pnx89.github.io/QUIZZ/">QUIZZ</a> <span>answering what a statistic said at the time, and refusing when it cannot</span></li>
+      <li><a href="https://pnx89.github.io/QUARANTINEZ/">QUARANTINEZ</a> <span>treating an outcome the venue never confirmed as terminal rather than as a retry</span></li>
+  </ul>
+
+  <footer>Quelin Zammit. Built for the failure that does not announce itself.</footer>
+</main>
+</body>
+</html>

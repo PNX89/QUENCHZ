@@ -1,6 +1,6 @@
 ---
 name: A claim in the README does not hold
-about: QUARANTINEZ says it does something, and it does not
+about: QUENCHZ says it does something, and it does not
 labels: claim
 ---
 
