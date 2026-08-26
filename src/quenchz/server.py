@@ -19,6 +19,13 @@ here.
 EVERY TOOL RETURN CARRIES A COVERAGE CERTIFICATE. It is a required field with no default, so a
 tool cannot answer without saying what it did not deliver.
 
+RUNNING OUT OF BUDGET IS AN EXPECTED ANSWER, NOT A CRASH. This was found by running the
+TypeScript proofs and watching the server's own output: the SDK logs a full stack trace for any
+exception that is not a `ToolError`, so every routine rate-limit refusal printed a traceback
+through four frames of anyio. A server that stack-traces its own normal behaviour buries the
+one real failure in a thousand expected ones. `OverBudget` is therefore converted at the
+boundary, which also keeps `gateway.py` and `budget.py` free of any MCP import.
+
 THE HOST ALLOWLIST IS WRITTEN OUT RATHER THAN SWITCHED OFF. The SDK turns DNS-rebinding
 protection on by default with an EMPTY allowlist, so a server that configures nothing answers
 421 to everything, including itself. That is fail-closed and it is the right default, and the
@@ -37,13 +44,14 @@ from typing import Any
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 
 from quenchz.budget import FairBudget, ManualClock
 from quenchz.concealment import ConcealTheSurface
-from quenchz.gateway import Caller, Gateway
+from quenchz.gateway import Caller, Gateway, OverBudget
 from quenchz.issuer import ISSUER, RESOURCE, Issuer
 from quenchz.tokens import AudienceRestrictedVerifier
 from quenchz.tools import Tool, Toolset
@@ -58,6 +66,18 @@ ALLOWED_HOSTS = ["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*"]
 # divided fairly between parties it knows about, and an unknown caller gets nothing rather than
 # a share, so that nobody can manufacture capacity by inventing a name.
 CALLERS = ("agent-alpha", "agent-beta")
+
+
+def _charge(gateway: Gateway, tool: str, caller: Caller) -> None:
+    """Spend this caller's budget, turning exhaustion into an expected tool failure.
+
+    The SDK logs `ToolError` at info and everything else with a full traceback. Being out of
+    budget is the limiter working, so it must arrive as the former.
+    """
+    try:
+        gateway.call(tool, caller, {})
+    except OverBudget as spent:
+        raise ToolError(str(spent)) from None
 
 
 def current_caller() -> Caller:
@@ -110,7 +130,7 @@ def build_server(
     @server.tool(name="rates.window", description="Euro reference rates across a date window.")
     def rates_window(cassette: str, start: str, end: str) -> dict[str, Any]:
         caller = current_caller()
-        gateway.call("rates.window", caller, {})
+        _charge(gateway, "rates.window", caller)
         return gateway.rates_window(
             cassette,
             datetime.date.fromisoformat(start),
@@ -121,7 +141,7 @@ def build_server(
     @server.tool(name="calendar.why", description="Why no rate was published on a given date.")
     def calendar_why(day: str) -> dict[str, Any]:
         caller = current_caller()
-        gateway.call("calendar.why", caller, {})
+        _charge(gateway, "calendar.why", caller)
         parsed = datetime.date.fromisoformat(day)
         return {
             "date": day,
@@ -135,7 +155,7 @@ def build_server(
     )
     def series_catalogue() -> dict[str, Any]:
         caller = current_caller()
-        gateway.call("series.catalogue", caller, {})
+        _charge(gateway, "series.catalogue", caller)
         return {
             "series": ["EXR.D.USD.EUR.SP00.A"],
             "note": "One series. The catalogue exists to be a tool most callers cannot see.",

@@ -29,3 +29,30 @@ jobs:
       python-versions: '["3.11", "3.12", "3.13"]'
       sync-args: "--dev"
       run-mypy: true
+
+  # The interoperability proof. It starts the Python server and drives it with a client
+  # written in another language on the official TypeScript SDK, which shares no code with the
+  # thing it is testing. That is the only honest way to support a claim about a protocol: the
+  # Python suite and the Python server can agree with each other about something that is not
+  # true of MCP.
+  #
+  # It reaches no network. The server replays committed responses and mints its own tokens
+  # into a temporary file that never touches this tree.
+  interop:
+    name: proved from outside the Python tree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clients/typescript/package-lock.json
+      - run: uv sync
+      - run: npm ci
+        working-directory: clients/typescript
+      - run: npm test
+        working-directory: clients/typescript
