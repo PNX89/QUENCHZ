@@ -17,10 +17,25 @@ already been through the SDK's own lookup and lost.
 
 Two methods are intercepted and nothing else:
 
-  tools/call   a name this caller may not call, for either reason, is refused here with the
-               one message, before the SDK ever looks it up.
+  tools/call   the caller's budget is charged FIRST, then a name it may not call, for either
+               reason, is refused with the one message, before the SDK ever looks it up.
   tools/list   is filtered to what this caller may call, because a tool it cannot use is a
                tool it should not be told about.
+
+THE CHARGE MOVED HERE, AND THAT WAS A DEFECT THIS MIDDLEWARE INTRODUCED. `gateway.py` charges
+before it looks a tool up, on the argument that a free refusal is the same leak as a
+descriptive one. This middleware then began refusing before the gateway was ever reached, so
+over MCP a refused call cost nothing: measured at two hundred refusals for free while a granted
+tool stopped at forty-five.
+
+Being precise about what that did and did not do, because the first report overstated it. It
+was NOT an existence oracle: an ungranted name and a nonexistent one were equally free, so a
+caller still could not tell them apart. What it was is a stated invariant that had become
+false, and an unlimited free probe of the namespace.
+
+So there is now exactly ONE charge point and it is here, at the boundary every tools/call
+crosses. The tools no longer charge, because two charge points is how a granted call gets
+billed twice.
 
 Source: ECB statistics.
 """
@@ -32,6 +47,8 @@ from typing import Any
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import CallToolResult, TextContent
 
+from quenchz.budget import FairBudget
+from quenchz.gateway import OVER_BUDGET
 from quenchz.tools import NO_SUCH_TOOL, Toolset
 
 __all__ = ["ConcealTheSurface"]
@@ -53,11 +70,21 @@ def _name_from(params: Any) -> str | None:
 class ConcealTheSurface:
     """A `ServerMiddleware` that refuses uniformly and lists selectively."""
 
-    def __init__(self, toolset: Toolset) -> None:
+    def __init__(self, toolset: Toolset, budget: FairBudget) -> None:
         self._tools = toolset
+        self._budget = budget
 
     async def __call__(self, ctx: Any, call_next: Any) -> Any:
         if ctx.method == "tools/call":
+            token = get_access_token()
+            caller = token.client_id if token is not None else ""
+            if not self._budget.request(caller).admitted:
+                # Charged before the name is looked at, so every call costs the same whether
+                # or not it is served. See the module docstring.
+                return CallToolResult(
+                    content=[TextContent(type="text", text=OVER_BUDGET)], is_error=True
+                )
+
             name = _name_from(ctx.params)
             if name is None or not self._tools.may_call(name, _granted_scopes()):
                 # Identical for a name that does not exist and a name this caller was never
