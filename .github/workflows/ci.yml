@@ -1,0 +1,31 @@
+name: CI
+
+# Nothing here reaches the network. Every fixture this repository replays was recorded once on
+# the build machine and committed, because a required job that calls a third party is a job
+# that turns red for reasons that have nothing to do with the code, and a green badge over a
+# vendor you do not control is a claim you cannot keep.
+#
+# There is no container and no daemon anywhere in this repository. The cache is an in-process
+# dict, which is a deliberate choice argued in the design decisions rather than a shortcut.
+#
+# The shared legs live in PNX89/.github and are pinned to a tag rather than a branch, so a
+# commit in that repository cannot turn this badge red. What the pipeline is for, and the five
+# things it deliberately does not gate, is argued at
+# https://github.com/PNX89/.github/blob/main/docs/adr/0001-what-ci-is-for.md
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: lint, types and the suite
+    uses: PNX89/.github/.github/workflows/checks.yml@v1
+    with:
+      python-versions: '["3.11", "3.12", "3.13"]'
+      sync-args: "--dev"
+      run-mypy: true
