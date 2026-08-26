@@ -22,10 +22,14 @@ classifiers = [
 # one job. Nothing here depends on `httpx` and a test asserts it stays that way.
 dependencies = [
     "mcp>=2.1.1",
-    "fastapi>=0.115",
+    # Imported directly by scripts/capture.py, so it is declared directly. It also arrives
+    # transitively through `mcp`, and relying on that would make this tree's HTTP client an
+    # accident of somebody else's dependency list.
+    "httpx2>=2.5.0",
     "uvicorn>=0.32",
     "pydantic>=2.9",
     "pyjwt[crypto]>=2.9",
+    "starlette>=0.40",
 ]
 
 [project.urls]
