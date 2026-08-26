@@ -68,17 +68,46 @@ class Gateway:
         requested_to: datetime.date,
         now: datetime.datetime,
     ) -> dict[str, Any]:
-        """Answer a window, and say what did not arrive in it."""
+        """Answer a window, and say what did not arrive in it.
+
+        THE OUTCOME IS MATCHED EXHAUSTIVELY BY NAME. It used to test only for WRONG_FORMAT and
+        let everything else fall through into the arithmetic below, so a vendor 404 for a
+        series that does not exist reached the caller as a success, with a certificate
+        byte-identical to a genuinely empty window. `upstream.read` had already classified it
+        correctly as UNKNOWN_SERIES and this method threw the classification away, which is the
+        worse half of it: the work was done and then discarded.
+        """
         reading = read(self._transport.fetch(cassette))
-        if reading.outcome is Outcome.WRONG_FORMAT:
-            raise ValueError(f"the vendor did not answer in the format asked for: {reading.detail}")
+
+        match reading.outcome:
+            case Outcome.OBSERVATIONS | Outcome.EMPTY_WINDOW:
+                pass
+            case Outcome.WRONG_FORMAT:
+                raise ValueError(
+                    f"the vendor did not answer in the format asked for: {reading.detail}"
+                )
+            case Outcome.UNKNOWN_SERIES:
+                raise ValueError(f"the vendor has no such series: {reading.detail}")
+            case Outcome.REJECTED_PARAMETERS:
+                raise ValueError(f"the vendor rejected the request: {reading.detail}")
+            case unreachable:  # pragma: no cover
+                # Not a catch-all that quietly answers anyway. An Outcome added without being
+                # taught to this match arrives here, and the alternative is handing a caller a
+                # confident certificate built from a response nobody classified.
+                raise AssertionError(f"outcome not handled by this match: {unreachable!r}")
 
         delivered = {
             day: value
             for day, value in reading.observations.items()
             if requested_from <= day <= requested_to
         }
-        coverage = reconstruct(requested_from, requested_to, set(delivered), now)
+        # The first date this series ever carried a value. This method knows it and
+        # `reconstruct` cannot, so it is passed rather than guessed. Without it, a window
+        # before the series began is certified as that many genuine gaps.
+        series_begins = min(reading.observations) if reading.observations else None
+        coverage = reconstruct(
+            requested_from, requested_to, set(delivered), now, series_begins=series_begins
+        )
         return {
             "observations": [[day.isoformat(), value] for day, value in sorted(delivered.items())],
             "coverage": coverage.model_dump(mode="json"),
