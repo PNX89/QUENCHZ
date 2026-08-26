@@ -1,10 +1,14 @@
 """The calendar, derived from the vendor's own series rather than asserted from a document.
 
-The interesting test here is the first one. It does not check a handful of dates somebody
-chose; it walks every weekday of the whole recorded series and requires that the six rules
-in `target_calendar` explain **every** absence with nothing left over. That is a much harder
-claim than "these three holidays are handled", and it is the claim that would break first if
-the ECB added a closing day.
+The load-bearing test walks every day of the whole recorded history and requires that the
+rules explain **every** absent value with nothing left over, and, in the other direction,
+that every day carrying a real value is one the rules call open. Either half alone is easy to
+satisfy with a broken implementation.
+
+The subtlety that cost the most to find is what "absent" means. Until May 2012 the ECB
+emitted a row for each closing day with an empty value and `OBS_STATUS` of `H`; afterwards it
+emits no row. Counting ROWS and counting VALUES therefore disagree by 62 across this series,
+and only counting values is right in both eras.
 """
 
 from __future__ import annotations
@@ -18,7 +22,9 @@ import pathlib
 import pytest
 
 from quenchz.target_calendar import (
-    CALENDAR_IN_FORCE_FROM,
+    ANNUAL_CLOSURES_FROM,
+    PLACEHOLDER_ROWS_END,
+    SPECIAL_CLOSURES,
     ClosingReason,
     closing_reason,
     easter_sunday,
@@ -27,84 +33,92 @@ from quenchz.target_calendar import (
 CASSETTES = pathlib.Path(__file__).resolve().parents[1] / "data" / "cassettes"
 
 
-def observed_days() -> set[datetime.date]:
+def _rows() -> list[dict[str, str]]:
     body = (CASSETTES / "usd-eur-daily-full-history.body").read_bytes()
-    rows = csv.DictReader(io.StringIO(body.decode("utf-8")))
-    return {datetime.date.fromisoformat(row["TIME_PERIOD"]) for row in rows}
+    return list(csv.DictReader(io.StringIO(body.decode("utf-8"))))
 
 
-def test_every_absent_weekday_in_the_whole_series_is_explained() -> None:
-    """Nothing left over, across the entire recorded history."""
-    observed = observed_days()
-    first, last = min(observed), max(observed)
+def days_with_a_value() -> set[datetime.date]:
+    return {datetime.date.fromisoformat(r["TIME_PERIOD"]) for r in _rows() if r["OBS_VALUE"]}
+
+
+def days_with_a_row() -> set[datetime.date]:
+    return {datetime.date.fromisoformat(r["TIME_PERIOD"]) for r in _rows()}
+
+
+def test_every_day_without_a_value_in_the_whole_series_is_explained() -> None:
+    """Nothing left over, across twenty-seven years."""
+    valued = days_with_a_value()
+    first, last = min(days_with_a_row()), max(days_with_a_row())
 
     unexplained: list[datetime.date] = []
     day = first
     while day <= last:
-        if day not in observed and closing_reason(day) is None:
+        if day not in valued and closing_reason(day) is None:
             unexplained.append(day)
         day += datetime.timedelta(days=1)
 
     assert unexplained == [], (
-        f"{len(unexplained)} absent days the calendar cannot account for, "
+        f"{len(unexplained)} days with no rate that the calendar cannot account for, "
         f"first five: {unexplained[:5]}"
     )
 
 
 def test_the_rules_are_not_vacuously_satisfied_by_explaining_everything() -> None:
-    """The other direction, which is the half that catches a broken guard.
-
-    A `closing_reason` that returned a reason for every date would pass the test above and be
-    useless. This requires that every day the ECB DID publish on is a day the calendar says
-    is open, which fails immediately if the function over-reaches.
-    """
-    observed = observed_days()
-    wrongly_closed = sorted(d for d in observed if closing_reason(d) is not None)
+    """The other direction, which is the half that catches a guard that over-reaches."""
+    wrongly_closed = sorted(d for d in days_with_a_value() if closing_reason(d) is not None)
     assert wrongly_closed == [], (
-        f"{len(wrongly_closed)} days carry a published rate but the calendar calls them "
-        f"closed, first five: {wrongly_closed[:5]}"
+        f"{len(wrongly_closed)} days carry a real rate but the calendar calls them closed, "
+        f"first five: {wrongly_closed[:5]}"
     )
 
 
-def test_the_calendar_changed_at_the_end_of_2012() -> None:
-    """Both sides of the boundary, because this is the fact a reader would assume away."""
-    observed = observed_days()
+def test_counting_rows_and_counting_values_disagree_by_sixty_two() -> None:
+    """The defect a row-counting client has, stated as a number.
 
-    # Good Friday and 1 May 2012: the ECB published, so the calendar must not claim closure.
-    assert datetime.date(2012, 4, 6) in observed
-    assert datetime.date(2012, 5, 1) in observed
-    assert closing_reason(datetime.date(2012, 4, 6)) is None
-    assert closing_reason(datetime.date(2012, 5, 1)) is None
-
-    # Christmas 2012, the first closing day it honours.
-    assert datetime.date(2012, 12, 25) not in observed
-    assert closing_reason(datetime.date(2012, 12, 25)) is ClosingReason.CHRISTMAS_DAY
-    assert datetime.date(2012, 12, 25) == CALENDAR_IN_FORCE_FROM
-
-
-def test_applying_todays_calendar_to_2010_would_invent_gaps() -> None:
-    """What the boundary is worth, stated as a number rather than as a caution.
-
-    If the holiday rules were applied to the whole series instead of from 2013, this many
-    days that carry a real published rate would be reported as closed. A coverage
-    certificate built that way is wrong on every historical window that spans a holiday.
+    Every one of the sixty-two is a placeholder: a row that exists, carries no value, and is
+    flagged `H`. A client that counted rows would have reported a complete year for 2005 and
+    handed its caller six days that contain nothing.
     """
-    observed = observed_days()
-    would_be_wrong = [
-        d
-        for d in observed
-        if d < CALENDAR_IN_FORCE_FROM and d.weekday() < 5 and _holiday_ignoring_the_boundary(d)
-    ]
-    assert len(would_be_wrong) == 62, f"expected 62, got {len(would_be_wrong)}"
+    rows = _rows()
+    placeholders = [r for r in rows if not r["OBS_VALUE"]]
+    assert len(placeholders) == 62
+    assert {r["OBS_STATUS"] for r in placeholders} == {"H"}
+    assert len(days_with_a_row()) - len(days_with_a_value()) == 62
 
 
-def _holiday_ignoring_the_boundary(day: datetime.date) -> bool:
-    easter = easter_sunday(day.year)
-    return (
-        day == easter - datetime.timedelta(days=2)
-        or day == easter + datetime.timedelta(days=1)
-        or (day.month, day.day) in {(1, 1), (5, 1), (12, 25), (12, 26)}
-    )
+def test_the_placeholder_encoding_stopped_in_may_2012() -> None:
+    """Both sides of the encoding change, and it is not a calendar change."""
+    rows = _rows()
+    last_placeholder = max(r["TIME_PERIOD"] for r in rows if r["OBS_STATUS"] == "H")
+    assert datetime.date.fromisoformat(last_placeholder) == PLACEHOLDER_ROWS_END
+
+    # Before: a row exists for the closure. After: no row exists, and the calendar says the
+    # same thing about both.
+    assert datetime.date(2012, 5, 1) in days_with_a_row()
+    assert datetime.date(2012, 5, 1) not in days_with_a_value()
+    assert closing_reason(datetime.date(2012, 5, 1)) is ClosingReason.LABOUR_DAY
+
+    assert datetime.date(2012, 12, 25) not in days_with_a_row()
+    assert closing_reason(datetime.date(2012, 12, 25)) is ClosingReason.CHRISTMAS_DAY
+
+
+def test_the_two_special_closures_are_real_and_flagged_by_the_vendor() -> None:
+    """Two one-off closures in twenty-seven years, both confirmed in the payload."""
+    flagged = {
+        datetime.date.fromisoformat(r["TIME_PERIOD"]) for r in _rows() if r["OBS_STATUS"] == "H"
+    }
+    for day in SPECIAL_CLOSURES:
+        assert day in flagged, f"{day} is claimed special but the vendor does not flag it"
+        assert closing_reason(day) is ClosingReason.SPECIAL_CLOSURE
+        assert day.weekday() < 5, "a weekend needs no special rule"
+
+    # And no annual rule produces either of them, which is why they have to be listed.
+    for day in SPECIAL_CLOSURES:
+        easter = easter_sunday(day.year)
+        assert day != easter - datetime.timedelta(days=2)
+        assert day != easter + datetime.timedelta(days=1)
+        assert (day.month, day.day) not in {(1, 1), (5, 1), (12, 25), (12, 26)}
 
 
 @pytest.mark.parametrize(
@@ -123,12 +137,7 @@ def test_easter_sunday_matches_known_dates(year: int, expected: datetime.date) -
 
 
 def test_the_vendor_publishes_no_rate_limit_header_of_any_kind() -> None:
-    """The budget claim rests on this, so it is checked against a recording, not asserted.
-
-    Every header of every recorded response is inspected. If the ECB ever starts publishing
-    a rate-limit header, a limiter that cannot react stops being a necessity and starts being
-    a choice, and this repository would have to say so.
-    """
+    """The budget claim rests on this, so it is checked against a recording, not asserted."""
     index = json.loads((CASSETTES / "index.json").read_text())
     offenders = [
         (entry["name"], header)
@@ -146,3 +155,21 @@ def test_a_closed_period_comes_back_as_two_hundred_with_an_empty_body() -> None:
     assert weekend["status"] == 200
     assert weekend["bytes"] == 0
     assert (CASSETTES / "usd-eur-daily-one-weekend.body").read_bytes() == b""
+
+
+def test_nineteen_ninety_nine_had_no_harmonised_closing_calendar() -> None:
+    """Two days in seven thousand, and the reason the vacuity test earns its place.
+
+    TARGET's first year ran on national calendars. Good Friday and Easter Monday 1999 carry
+    real rates and no later year does, which is why the annual rules start in 2000 rather
+    than at the beginning of the series.
+    """
+    valued = days_with_a_value()
+    assert datetime.date(1999, 4, 2) in valued, "Good Friday 1999 carries a rate"
+    assert datetime.date(1999, 4, 5) in valued, "Easter Monday 1999 carries a rate"
+    assert closing_reason(datetime.date(1999, 4, 2)) is None
+    assert closing_reason(datetime.date(1999, 4, 5)) is None
+
+    # And every later Easter is a closure, so this really is an era and not a rule change.
+    assert closing_reason(datetime.date(2000, 4, 21)) is ClosingReason.GOOD_FRIDAY
+    assert datetime.date(2000, 1, 1) == ANNUAL_CLOSURES_FROM
