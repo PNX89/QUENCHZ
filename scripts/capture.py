@@ -68,7 +68,7 @@ def record(name: str, url: str) -> dict[str, object]:
         # is a claim a reader can check rather than one they have to believe.
         "response_headers": dict(response.headers),
         "captured_at": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
-        "source": "ECB statistics.",
+        "source": "Source: ECB statistics.",
     }
 
 
