@@ -24,6 +24,7 @@ import pytest
 from quenchz.target_calendar import (
     ANNUAL_CLOSURES_FROM,
     PLACEHOLDER_ROWS_END,
+    SERIES_BEGINS,
     SPECIAL_CLOSURES,
     ClosingReason,
     closing_reason,
@@ -31,6 +32,7 @@ from quenchz.target_calendar import (
 )
 
 CASSETTES = pathlib.Path(__file__).resolve().parents[1] / "data" / "cassettes"
+REPO_SOURCE = pathlib.Path(__file__).resolve().parents[1] / "src" / "quenchz"
 
 
 def _rows() -> list[dict[str, str]]:
@@ -173,3 +175,49 @@ def test_nineteen_ninety_nine_had_no_harmonised_closing_calendar() -> None:
     # And every later Easter is a closure, so this really is an era and not a rule change.
     assert closing_reason(datetime.date(2000, 4, 21)) is ClosingReason.GOOD_FRIDAY
     assert datetime.date(2000, 1, 1) == ANNUAL_CLOSURES_FROM
+
+
+def test_the_numbers_in_the_docstrings_are_recomputed_rather_than_remembered() -> None:
+    """The two figures `easter_sunday`'s docstring quotes, derived from the committed series.
+
+    It used to say "the two most common absences in the series, at fourteen each" and both
+    halves were wrong. Fourteen was left over from counting missing ROWS before the 2012
+    encoding change and survived the correction that doubled it, and weekends are and always
+    were the most common absence by two orders of magnitude. A docstring number that nothing
+    recomputes goes stale the first time the code under it changes.
+    """
+    valued = days_with_a_value()
+    first, last = min(days_with_a_row()), max(days_with_a_row())
+
+    moving, weekends = 0, 0
+    day = first
+    while day <= last:
+        if day not in valued:
+            if day.weekday() >= 5:
+                weekends += 1
+            elif closing_reason(day) in {ClosingReason.GOOD_FRIDAY, ClosingReason.EASTER_MONDAY}:
+                moving += 1
+        day += datetime.timedelta(days=1)
+
+    assert moving == 54, f"27 Good Fridays and 27 Easter Mondays, got {moving} between them"
+    assert weekends == 2884
+    assert weekends > moving, "weekends are the most common absence, and always were"
+
+    source = (REPO_SOURCE / "target_calendar.py").read_text()
+    assert "27 absences each" in source
+    assert "2,884" in source
+
+    # The old figure is allowed to appear, but only in the sentence explaining that it was
+    # wrong. Banning the words outright fails against the correction itself, which is the
+    # vocabulary-versus-claim distinction this portfolio has already been caught by once.
+    for sentence in source.split("."):
+        if "fourteen each" in sentence:
+            assert "wrong" in sentence.lower() or "said" in sentence.lower(), (
+                f"the superseded figure is being stated as current: {sentence.strip()!r}"
+            )
+
+
+def test_the_series_start_is_the_first_day_that_carries_a_value() -> None:
+    """SERIES_BEGINS is a fact about the data, so it is checked against the data."""
+    assert min(days_with_a_value()) == SERIES_BEGINS
+    assert closing_reason(SERIES_BEGINS) is None, "the first day is an open day"
