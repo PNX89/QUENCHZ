@@ -24,8 +24,14 @@ function stopServer() {
   rmSync(workdir, { recursive: true, force: true });
 }
 
+// SIGTERM was missing here, and it is the signal a plain `kill`, a CI cancellation and most
+// process supervisors actually send. Without it the Python server was left listening and the
+// file of live bearer tokens was left on disk. They expire in minutes and the issuer dies with
+// the process, and leaving them lying about is still not something to do on purpose.
 process.on('exit', stopServer);
-process.on('SIGINT', () => { stopServer(); process.exit(130); });
+for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) {
+  process.on(signal, () => { stopServer(); process.exit(code); });
+}
 
 async function waitForManifest(timeoutMs) {
   const deadline = Date.now() + timeoutMs;
