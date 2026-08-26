@@ -11,6 +11,11 @@ dist/
 venv/
 .python-version
 
+# Node
+node_modules/
+clients/*/dist/
+*.tsbuildinfo
+
 # Tooling
 .pytest_cache/
 .ruff_cache/
