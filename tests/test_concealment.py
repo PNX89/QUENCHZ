@@ -17,7 +17,7 @@ from typing import Any
 import httpx2
 import pytest
 
-from quenchz.budget import ManualClock
+from quenchz.budget import FairBudget, ManualClock
 from quenchz.concealment import ConcealTheSurface
 from quenchz.issuer import Issuer
 from quenchz.server import build_app
@@ -156,10 +156,64 @@ def test_the_filter_refuses_a_shape_it_does_not_understand() -> None:
     dict. It looked like a working filter in the source and in the diff, and it leaked the
     whole tool list. Anything unrecognised now raises.
     """
-    concealer = ConcealTheSurface(Toolset([Tool("a", "s", lambda **_: None, "a tool")]))
+    concealer = ConcealTheSurface(
+        Toolset([Tool("a", "s", lambda **_: None, "a tool")]),
+        FairBudget(capacity=60, refill_per_second=60, callers=("a",), clock=ManualClock()),
+    )
 
     with pytest.raises(RuntimeError, match="does not understand"):
         concealer._filter(object())
 
     with pytest.raises(RuntimeError, match="no 'tools' key"):
         concealer._filter({"something": "else"})
+
+
+async def _calls_before_the_budget_stops(
+    caller: Session, name: str, arguments: dict[str, Any]
+) -> int:
+    """How many calls got through before the budget refused, capped so a leak cannot hang."""
+    for attempt in range(500):
+        answer = await caller.call(name, arguments)
+        text = answer["content"][0]["text"] if answer.get("content") else ""
+        if "budget" in text:
+            return attempt
+    raise AssertionError(f"500 calls to {name!r} and the budget never refused: they are free")
+
+
+async def test_a_refused_call_costs_the_same_as_a_served_one_over_mcp(issuer: Issuer) -> None:
+    """The gateway's invariant, held at the layer a caller actually talks to.
+
+    `gateway.py` charges before it looks a tool up, so that a refusal is never cheaper than an
+    answer. This middleware then began refusing before the gateway was reached, and over MCP a
+    refused call cost nothing: measured at two hundred refusals for free while a granted tool
+    stopped at forty-five. The charge moved here, to the one boundary every tools/call crosses.
+
+    Being exact about what that defect was, since the first report of it overstated the case:
+    an ungranted name and a nonexistent one were equally free, so it was never an oracle for
+    which tools exist. It was a stated invariant that had quietly become false, and an
+    unmetered probe of the whole namespace.
+    """
+    async with session(issuer, ["rates:read"]) as caller:
+        granted = await _calls_before_the_budget_stops(
+            caller, "calendar.why", {"day": "2026-04-03"}
+        )
+    async with session(issuer, ["rates:read"]) as caller:
+        ungranted = await _calls_before_the_budget_stops(caller, "series.catalogue", {})
+    async with session(issuer, ["rates:read"]) as caller:
+        missing = await _calls_before_the_budget_stops(caller, "no.such.tool", {})
+
+    assert granted == ungranted == missing, (
+        f"served {granted}, ungranted {ungranted}, nonexistent {missing}: a caller can tell "
+        f"these apart by watching its own budget"
+    )
+    assert granted == 45, "reserve of 15 plus the whole spare of 30, with the clock frozen"
+
+
+async def test_the_budget_refusal_over_mcp_names_nothing(issuer: Issuer) -> None:
+    """It says only what the caller already knows, exactly as the dispatch refusal does."""
+    async with session(issuer, ["rates:read"]) as caller:
+        await _calls_before_the_budget_stops(caller, "calendar.why", {"day": "2026-04-03"})
+        spent = await caller.call("series.catalogue", {})
+    text = spent["content"][0]["text"]
+    for forbidden in ("series", "catalogue", "scope", "rates", "Unknown tool"):
+        assert forbidden not in text, f"the budget refusal leaks {forbidden!r}"

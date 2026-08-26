@@ -128,6 +128,16 @@ async function proveAudience(m: Manifest): Promise<void> {
   }
 }
 
+/**
+ * How many tool calls the reach proof spent on the greedy caller's budget.
+ *
+ * It is tracked rather than assumed because refused calls are charged. That is the whole
+ * point of the budget being taken at the boundary: a refusal is never cheaper than an answer,
+ * so probing for tools that do not exist is not free. The budget proof below subtracts this
+ * and asserts the total, which is a stronger statement than either half alone.
+ */
+let refusedCallsAlreadyCharged = 0;
+
 async function proveReach(m: Manifest): Promise<void> {
   console.log('\nREACH: a caller cannot learn what it may not use');
 
@@ -142,6 +152,7 @@ async function proveReach(m: Manifest): Promise<void> {
 
     const ungranted = await client.callTool({ name: 'series.catalogue', arguments: {} });
     const invented = await client.callTool({ name: 'series.cataloguz', arguments: {} });
+    refusedCallsAlreadyCharged += 2;
 
     check(isError(ungranted) && isError(invented), 'both refusals are errors');
     check(
@@ -190,10 +201,16 @@ async function proveBudget(m: Manifest): Promise<void> {
   check(m.budget.clock === 'frozen', 'the server clock is frozen, so the arithmetic is exact');
 
   const greedy = await drain(m.url, m.tokens.greedyForThisResource!, 500);
+  const remaining = expectedGreedy - refusedCallsAlreadyCharged;
   check(
-    greedy === expectedGreedy,
-    `the bursting caller took its own reserve and all of the spare, and stopped: ${expectedGreedy}`,
-    `expected ${expectedGreedy}, got ${greedy}`,
+    greedy === remaining,
+    `the bursting caller took what was left of its reserve and the spare: ${remaining}`,
+    `expected ${expectedGreedy} minus ${refusedCallsAlreadyCharged} already charged, got ${greedy}`,
+  );
+  check(
+    refusedCallsAlreadyCharged > 0 && greedy < expectedGreedy,
+    `refused calls are charged too: the ${refusedCallsAlreadyCharged} refusals above cost budget`,
+    `a refusal that cost nothing would leave the full ${expectedGreedy} here, and ${greedy} came back`,
   );
 
   const quiet = await drain(m.url, m.tokens.quietForThisResource!, 500);
