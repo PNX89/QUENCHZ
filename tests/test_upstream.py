@@ -110,3 +110,26 @@ def test_every_recording_classifies_into_a_named_outcome(tape: CassetteTransport
         reading = read(tape.fetch(name))
         assert reading.outcome in set(Outcome), f"{name} fell through to nothing"
         assert reading.detail, f"{name} classified with no explanation"
+
+
+@pytest.mark.parametrize(
+    ("label", "body"),
+    [
+        ("a JSON object", b'{"error": "something went wrong"}'),
+        ("an HTML page", b"<html><body><h1>502 Bad Gateway</h1></body></html>"),
+        ("a plain sentence", b"the service is temporarily unavailable"),
+        ("a CSV with the wrong columns", b"alpha,beta\n1,2\n"),
+    ],
+)
+def test_a_two_hundred_carrying_something_else_entirely_is_refused(label: str, body: bytes) -> None:
+    """The guard that catches a 200 which is neither the CSV asked for nor the XML we know.
+
+    It was deletable: removing it broke no test. What it actually prevents is a crash, because
+    without it `csv.DictReader` happily parses the garbage and the row access raises KeyError
+    out of the reader, which reaches the caller as a 500 rather than as a classification.
+    Anything a proxy, a captive portal or a gateway error page might substitute lands here.
+    """
+    reading = read(RawResponse(status=200, content_type="text/csv", body=body))
+    assert reading.outcome is Outcome.WRONG_FORMAT, f"{label} was not refused"
+    assert reading.observations == {}
+    assert reading.detail
