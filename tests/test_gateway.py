@@ -148,3 +148,74 @@ def test_a_body_in_the_wrong_format_is_raised_and_never_answered_from() -> None:
             datetime.date(2026, 7, 31),
             WHEN,
         )
+
+
+def test_a_vendor_404_is_not_served_as_an_empty_window() -> None:
+    """The classifier did its job and the gateway used to throw the answer away.
+
+    `upstream.read` classifies the recorded 404 correctly as UNKNOWN_SERIES. This method used
+    to test only for WRONG_FORMAT, so every other non-observation outcome fell through into
+    the arithmetic and the caller received a success whose certificate was byte-identical to a
+    genuinely empty window.
+    """
+    gateway = _gateway(ManualClock())
+    with pytest.raises(ValueError, match="no such series"):
+        gateway.rates_window(
+            "unknown-series-key", datetime.date(2026, 1, 1), datetime.date(2026, 1, 31), WHEN
+        )
+
+
+def test_every_outcome_is_either_answered_or_raised_and_none_falls_through() -> None:
+    """Exhaustive by name, so a new Outcome breaks the build rather than the caller."""
+    gateway = _gateway(ManualClock())
+    answered, raised = [], []
+    for name in CassetteTransport().names():
+        try:
+            gateway.rates_window(name, datetime.date(2026, 7, 1), datetime.date(2026, 7, 31), WHEN)
+            answered.append(name)
+        except ValueError:
+            raised.append(name)
+
+    assert "unknown-series-key" in raised
+    assert "format-that-does-not-exist" in raised
+    assert "usd-eur-daily-one-month" in answered
+    assert sorted(answered + raised) == CassetteTransport().names(), "one fell through"
+
+
+def test_a_window_before_the_series_is_not_reported_as_gaps_through_the_gateway() -> None:
+    """The first observed date is in hand here, so it must reach the certificate."""
+    gateway = _gateway(ManualClock())
+    answer = gateway.rates_window(
+        "usd-eur-daily-full-history", datetime.date(1990, 1, 1), datetime.date(1990, 12, 31), WHEN
+    )
+    coverage = answer["coverage"]
+    assert coverage["expected_observations"] == 0
+    assert coverage["absent"]["no_such_observation"] == 0
+    assert coverage["absent"]["before_the_series"] == 365
+
+
+def test_an_outcome_this_match_has_not_been_taught_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The last arm is reachable and does work, rather than being decoration.
+
+    A catch-all here would answer the caller anyway, from a response nobody classified, which
+    is the exact defect the match was written to fix. This forces an unknown outcome through
+    and requires a raise. Found because a mutation turning the match into `case _` survived
+    every other test in this file.
+    """
+    from quenchz import gateway as gateway_module
+    from quenchz.upstream import Reading
+
+    monkeypatch.setattr(
+        gateway_module,
+        "read",
+        lambda _response: Reading(
+            outcome="something-nobody-declared",  # type: ignore[arg-type]
+            observations={},
+            placeholders=frozenset(),
+            detail="a classification this gateway has never seen",
+        ),
+    )
+    with pytest.raises(AssertionError, match="not handled by this match"):
+        _gateway(ManualClock()).rates_window(
+            "usd-eur-daily-one-month", datetime.date(2026, 7, 1), datetime.date(2026, 7, 31), WHEN
+        )
