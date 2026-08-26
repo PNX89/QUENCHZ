@@ -67,6 +67,7 @@ from quenchz.budget import FairBudget, ManualClock
 from quenchz.concealment import ConcealTheSurface
 from quenchz.gateway import Caller, Gateway
 from quenchz.issuer import ISSUER, RESOURCE, Issuer
+from quenchz.target_calendar import SERIES_BEGINS
 from quenchz.tokens import AudienceRestrictedVerifier
 from quenchz.tools import Tool, Toolset
 from quenchz.upstream import CassetteTransport, Transport
@@ -141,6 +142,14 @@ def build_server(
     @server.tool(name="calendar.why", description="Why no rate was published on a given date.")
     def calendar_why(day: str) -> dict[str, Any]:
         parsed = datetime.date.fromisoformat(day)
+        if parsed < SERIES_BEGINS:
+            # Otherwise this answers "no reason, a rate was published" for every date before
+            # the series existed, including 1 January 1999, three days before its first row.
+            return {
+                "date": day,
+                "closed_because": "before_the_series",
+                "source": "ECB statistics.",
+            }
         return {
             "date": day,
             "closed_because": gateway.closing_reason_for(parsed),
