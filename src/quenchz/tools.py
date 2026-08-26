@@ -59,6 +59,14 @@ class Toolset:
         """What a caller may list. A tool it cannot call is a tool it cannot see."""
         return sorted(name for name, tool in self._tools.items() if tool.scope in granted)
 
+    def may_call(self, name: str, granted: frozenset[str]) -> bool:
+        """Whether this caller could call `name`, with no distinction between the two ways
+        the answer can be no. Unknown name and ungranted scope both return False, and the
+        caller of this method must not be able to tell which, because that is the whole point.
+        """
+        tool = self._tools.get(name)
+        return tool is not None and tool.scope in granted
+
     def dispatch(self, name: str, granted: frozenset[str], arguments: Mapping[str, Any]) -> Any:
         tool = self._tools.get(name)
         if tool is None:

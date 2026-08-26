@@ -42,6 +42,7 @@ from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 
 from quenchz.budget import FairBudget, ManualClock
+from quenchz.concealment import ConcealTheSurface
 from quenchz.gateway import Caller, Gateway
 from quenchz.issuer import ISSUER, RESOURCE, Issuer
 from quenchz.tokens import AudienceRestrictedVerifier
@@ -74,8 +75,9 @@ def build_server(
     clock: ManualClock | None = None,
 ) -> MCPServer:
     """Wire the gateway to MCP. The interesting arguments are the ones NOT passed."""
+    toolset = _toolset()
     gateway = Gateway(
-        toolset=_toolset(),
+        toolset=toolset,
         budget=FairBudget(
             capacity=60,
             refill_per_second=60,
@@ -100,6 +102,9 @@ def build_server(
             # required_scopes is NOT set. See the module docstring: the middleware that would
             # enforce it names the scope it denies, and naming the scope names the tool.
         ),
+        # Runs before the SDK's own tool lookup, which would otherwise answer an unregistered
+        # name with "Unknown tool: <name>" and undo the whole point of one shared refusal.
+        middleware=[ConcealTheSurface(toolset)],
     )
 
     @server.tool(name="rates.window", description="Euro reference rates across a date window.")
@@ -121,6 +126,19 @@ def build_server(
         return {
             "date": day,
             "closed_because": gateway.closing_reason_for(parsed),
+            "source": "ECB statistics.",
+        }
+
+    @server.tool(
+        name="series.catalogue",
+        description="Every series this server can reach. Most callers are not granted this.",
+    )
+    def series_catalogue() -> dict[str, Any]:
+        caller = current_caller()
+        gateway.call("series.catalogue", caller, {})
+        return {
+            "series": ["EXR.D.USD.EUR.SP00.A"],
+            "note": "One series. The catalogue exists to be a tool most callers cannot see.",
             "source": "ECB statistics.",
         }
 
