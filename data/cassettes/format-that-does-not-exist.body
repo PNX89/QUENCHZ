@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?><message:GenericData xmlns:message="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message" xmlns:common="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:generic="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/data/generic" xsi:schemaLocation="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message https://data-api.ecb.europa.eu:443/vocabulary/sdmx/2_1/SDMXMessage.xsd http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common https://data-api.ecb.europa.eu:443/vocabulary/sdmx/2_1/SDMXCommon.xsd http://www.sdmx.org/resources/sdmxml/schemas/v2_1/data/generic https://data-api.ecb.europa.eu:443/vocabulary/sdmx/2_1/SDMXDataGeneric.xsd">
+<message:Header>
+<message:ID>6f97361a-808d-4d2c-b028-1d4099472c9d</message:ID>
+<message:Test>false</message:Test>
+<message:Prepared>2026-08-26T09:43:15.763+02:00</message:Prepared>
+<message:Sender id="ECB"/>
+<message:Structure structureID="ECB_EXR1" dimensionAtObservation="TIME_PERIOD">
+<common:Structure>
+<URN>urn:sdmx:org.sdmx.infomodel.datastructure.DataStructure=ECB:ECB_EXR1(1.0)</URN>
+</common:Structure>
+</message:Structure>
+</message:Header>
+<message:DataSet action="Replace" validFromDate="2026-08-26T09:43:15.763+02:00" structureRef="ECB_EXR1">
+<generic:Series>
+<generic:SeriesKey>
+<generic:Value id="FREQ" value="D"/>
+<generic:Value id="CURRENCY" value="USD"/>
+<generic:Value id="CURRENCY_DENOM" value="EUR"/>
+<generic:Value id="EXR_TYPE" value="SP00"/>
+<generic:Value id="EXR_SUFFIX" value="A"/>
+</generic:SeriesKey>
+<generic:Attributes>
+<generic:Value id="UNIT_INDEX_BASE" value="99Q1=100"/>
+<generic:Value id="COLLECTION" value="A"/>
+<generic:Value id="SOURCE_AGENCY" value="4F0"/>
+<generic:Value id="TIME_FORMAT" value="P1D"/>
+<generic:Value id="DECIMALS" value="4"/>
+<generic:Value id="UNIT" value="USD"/>
+<generic:Value id="TITLE_COMPL" value="ECB reference exchange rate, US dollar/Euro, 2.15 pm (C.E.T.)"/>
+<generic:Value id="TITLE" value="US dollar/Euro ECB reference exchange rate"/>
+<generic:Value id="UNIT_MULT" value="0"/>
+</generic:Attributes>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-01"/>
+<generic:ObsValue value="1.1383"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-02"/>
+<generic:ObsValue value="1.1399"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-03"/>
+<generic:ObsValue value="1.1448"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-06"/>
+<generic:ObsValue value="1.1415"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-07"/>
+<generic:ObsValue value="1.1433"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-08"/>
+<generic:ObsValue value="1.1404"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-09"/>
+<generic:ObsValue value="1.1435"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-10"/>
+<generic:ObsValue value="1.143"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-13"/>
+<generic:ObsValue value="1.1424"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-14"/>
+<generic:ObsValue value="1.1405"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-15"/>
+<generic:ObsValue value="1.1406"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-16"/>
+<generic:ObsValue value="1.1467"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-17"/>
+<generic:ObsValue value="1.1435"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-20"/>
+<generic:ObsValue value="1.1426"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-21"/>
+<generic:ObsValue value="1.1418"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-22"/>
+<generic:ObsValue value="1.1408"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-23"/>
+<generic:ObsValue value="1.1392"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-24"/>
+<generic:ObsValue value="1.1377"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-27"/>
+<generic:ObsValue value="1.1389"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-28"/>
+<generic:ObsValue value="1.1367"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-29"/>
+<generic:ObsValue value="1.138"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-30"/>
+<generic:ObsValue value="1.1476"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+<generic:Obs>
+<generic:ObsDimension value="2026-07-31"/>
+<generic:ObsValue value="1.1485"/>
+<generic:Attributes>
+<generic:Value id="OBS_STATUS" value="A"/>
+<generic:Value id="OBS_CONF" value="F"/>
+</generic:Attributes>
+</generic:Obs>
+</generic:Series>
+</message:DataSet>
+</message:GenericData>
