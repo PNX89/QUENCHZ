@@ -169,3 +169,56 @@ def test_the_grace_window_exists_because_the_vendor_said_around() -> None:
         monday, monday, set(), datetime.datetime(2026, 8, 24, 17, 1, tzinfo=FRANKFURT)
     )
     assert outside.absent[Absence.NO_SUCH_OBSERVATION] == 1, "past the grace, this is a gap"
+
+
+def test_a_window_before_the_series_began_is_not_hundreds_of_gaps() -> None:
+    """Nothing was due in 1990, so nothing is missing.
+
+    Found by a review that asked for a window nine years before the euro existed. The
+    certificate answered `expected_observations: 261` with all 261 filed under
+    NO_SUCH_OBSERVATION, whose documented meaning is that somebody should know. That is the
+    worst available answer: a confident report of 261 absent rates on days when none was owed.
+    """
+    got = reconstruct(
+        datetime.date(1990, 1, 1),
+        datetime.date(1990, 12, 31),
+        set(),
+        LONG_AFTER,
+        series_begins=datetime.date(1999, 1, 4),
+    )
+    assert got.expected_observations == 0, "nothing was ever due here"
+    assert got.absent[Absence.NO_SUCH_OBSERVATION] == 0
+    assert got.absent[Absence.TARGET_CLOSED] == 0, "a closure implies something to close"
+    assert got.absent[Absence.BEFORE_THE_SERIES] == 365
+    assert got.complete is True
+
+
+def test_a_window_straddling_the_start_reports_both_sides() -> None:
+    """The harder case, because the spurious gaps used to hide among real ones.
+
+    A window from before the series into it must not lump the two together: the days before
+    the start were never owed, and the days after are subject to the usual three causes.
+    """
+    begins = datetime.date(1999, 1, 4)
+    got = reconstruct(
+        datetime.date(1998, 12, 1),
+        datetime.date(1999, 2, 1),
+        set(),
+        LONG_AFTER,
+        series_begins=begins,
+    )
+    assert got.absent[Absence.BEFORE_THE_SERIES] == 34
+    assert got.expected_observations == 21, "only the days from the start onwards were due"
+    assert got.absent[Absence.NO_SUCH_OBSERVATION] == 21, "and those really are missing here"
+
+
+def test_an_unknown_lower_bound_is_left_unknown_rather_than_guessed() -> None:
+    """Omitting series_begins must not silently invent one.
+
+    The parameter is optional because a caller may genuinely not know the first date. What it
+    must never do is default to something plausible, which would make the certificate wrong in
+    a way nobody could see.
+    """
+    got = reconstruct(datetime.date(1990, 1, 1), datetime.date(1990, 12, 31), set(), LONG_AFTER)
+    assert got.absent[Absence.BEFORE_THE_SERIES] == 0
+    assert got.expected_observations == 261, "with no lower bound, every weekday was expected"
