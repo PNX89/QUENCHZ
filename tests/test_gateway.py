@@ -95,11 +95,16 @@ def test_running_out_of_budget_is_a_different_answer_from_being_refused_a_tool()
     with pytest.raises(ToolRefused):
         gateway.call("series.catalogue", caller, {})
 
-    while True:
+    # Bounded for the same reason as CALL_CAP above, and this loop was missed when that cap
+    # was added. A mutation that makes refused calls free turns an unbounded loop here into a
+    # hang, and a test that hangs blocks the pipeline instead of reporting.
+    for _ in range(CALL_CAP):
         try:
             gateway.call("rates.window", caller, {})
         except OverBudget:
             break
+    else:
+        raise AssertionError(f"{CALL_CAP} calls and the budget never refused")
 
     # Now over budget, the ungranted tool no longer reports as ungranted, because the call
     # never gets that far. Both callers are told the same thing whatever they ask for.

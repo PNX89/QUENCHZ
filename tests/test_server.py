@@ -8,6 +8,7 @@ wired in is worth nothing, and the wiring is where the two decisions about the S
 from __future__ import annotations
 
 import contextlib
+import datetime
 import json
 from collections.abc import AsyncIterator
 
@@ -152,3 +153,49 @@ async def test_the_protected_resource_metadata_names_this_resource(issuer: Issue
     metadata = json.loads(response.text)
     assert metadata["resource"] == RESOURCE
     assert metadata["authorization_servers"], "a client needs somewhere to go for a token"
+
+
+def test_a_tool_that_returns_observations_also_returns_a_certificate(issuer: Issuer) -> None:
+    """The narrowed COVERAGE claim, enforced structurally rather than by reading a docstring.
+
+    The module used to claim EVERY tool return carried a certificate. Two of the three do not,
+    and attaching one to them would be worse than not: a coverage block answers "how much of
+    the window you asked for arrived", and neither `calendar.why` nor `series.catalogue` is
+    answering about a window. So the rule is the narrow one, and this asserts it against the
+    real returns rather than trusting the paragraph that describes it.
+    """
+    from quenchz.budget import FairBudget, ManualClock
+    from quenchz.gateway import Gateway
+    from quenchz.server import _toolset
+    from quenchz.upstream import CassetteTransport
+
+    gateway = Gateway(
+        _toolset(),
+        FairBudget(
+            capacity=60, refill_per_second=60, callers=("agent-alpha",), clock=ManualClock()
+        ),
+        CassetteTransport(),
+    )
+    returns = {
+        "rates.window": gateway.rates_window(
+            "usd-eur-daily-easter-2026",
+            datetime.date(2026, 3, 30),
+            datetime.date(2026, 4, 10),
+            datetime.datetime(2026, 8, 26, 12, 0, tzinfo=datetime.UTC),
+        ),
+        "calendar.why": {
+            "date": "2026-04-03",
+            "closed_because": gateway.closing_reason_for(datetime.date(2026, 4, 3)),
+            "source": "ECB statistics.",
+        },
+    }
+    for name, payload in returns.items():
+        if "observations" in payload:
+            assert "coverage" in payload, f"{name} returns observations and no certificate"
+        assert payload.get("source") == "ECB statistics.", f"{name} carries no attribution"
+
+    assert "coverage" in returns["rates.window"]
+    assert "coverage" not in returns["calendar.why"], (
+        "if this ever gains a certificate, the narrowed claim in server.py must be widened "
+        "back rather than left describing something that is no longer true"
+    )

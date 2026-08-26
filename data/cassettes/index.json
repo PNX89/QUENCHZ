@@ -22,7 +22,7 @@
       "x-xss-protection": "0"
     },
     "sha256": "8a4a28c269cbe6bcb5ebaaa72102594afa5dcfc80c5ed125d673a48d1f3c4bd9",
-    "source": "ECB statistics.",
+    "source": "Source: ECB statistics.",
     "status": 200,
     "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=csvdata"
   },
@@ -49,7 +49,7 @@
       "x-xss-protection": "0"
     },
     "sha256": "8115c9b9fbe9e87d2e20df74c236f86277dbb8b27f5582b2b4de5a4a959d2691",
-    "source": "ECB statistics.",
+    "source": "Source: ECB statistics.",
     "status": 200,
     "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=csvdata&startPeriod=2026-03-30&endPeriod=2026-04-10"
   },
@@ -76,7 +76,7 @@
       "x-xss-protection": "0"
     },
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "source": "ECB statistics.",
+    "source": "Source: ECB statistics.",
     "status": 200,
     "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=csvdata&startPeriod=2026-08-22&endPeriod=2026-08-23"
   },
@@ -103,7 +103,7 @@
       "x-xss-protection": "0"
     },
     "sha256": "3dfbe47e333cc141bf1bf5d7c2695ccb17424fc46d76a63be7e4c9db07fadbd4",
-    "source": "ECB statistics.",
+    "source": "Source: ECB statistics.",
     "status": 200,
     "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=csvdata&startPeriod=2026-07-01&endPeriod=2026-07-31"
   },
@@ -129,7 +129,7 @@
       "x-xss-protection": "0"
     },
     "sha256": "a825c24327bbf50053033d2bb2b0dc449d023fb2c09748e82d9567d7ae61a5dd",
-    "source": "ECB statistics.",
+    "source": "Source: ECB statistics.",
     "status": 404,
     "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.ZZZ.EUR.SP00.A?format=csvdata"
   },
@@ -155,7 +155,7 @@
       "x-xss-protection": "0"
     },
     "sha256": "00469d9c48e487fea48376203fc533e240117f525ac69d6047e34f097fd2cbcf",
-    "source": "ECB statistics.",
+    "source": "Source: ECB statistics.",
     "status": 200,
     "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=nonsense&startPeriod=2026-07-01&endPeriod=2026-07-31"
   }
