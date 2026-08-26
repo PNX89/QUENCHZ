@@ -163,3 +163,33 @@ def test_a_reserve_refills_at_a_rate_rather_than_all_at_once() -> None:
     assert granted == 4, (
         f"a tenth of a second is worth one reserve token and three of spare, got {granted}"
     )
+
+
+def test_an_idle_caller_cannot_bank_capacity_beyond_its_reserve() -> None:
+    """The cap on the refill, which no test held.
+
+    Removing `min(self._reserve_size, ...)` broke nothing, and what it prevents is the whole
+    point of a ceiling: a caller that sits quiet for an hour would otherwise arrive with an
+    hour's worth of tokens and spend them in one burst, which is precisely the behaviour the
+    reserve exists to bound.
+    """
+    clock = ManualClock()
+    budget = FairBudget(capacity=60, refill_per_second=60, callers=("a", "b"), clock=clock)
+    # Spend everything reachable, then go quiet for an hour.
+    assert sum(budget.request("a").admitted for _ in range(1000)) == 45
+    clock.advance(3600.0)
+
+    banked = sum(budget.request("a").admitted for _ in range(1000))
+    assert banked == 45, (
+        f"an hour of silence bought {banked} calls, not the {45} the reserve and spare allow. "
+        f"The refill is uncapped, so the ceiling is not a ceiling."
+    )
+
+
+def test_the_spare_is_capped_too_and_not_only_the_reserves() -> None:
+    """Both halves of the budget, since capping one and not the other still leaks."""
+    clock = ManualClock()
+    budget = FairBudget(capacity=60, refill_per_second=60, callers=("a",), clock=clock)
+    assert sum(budget.request("a").admitted for _ in range(1000)) == 60
+    clock.advance(86_400.0)
+    assert sum(budget.request("a").admitted for _ in range(1000)) == 60, "a day banked nothing"
