@@ -11,7 +11,9 @@ open and proved from outside the Python tree.**
 [![Data: ECB](https://img.shields.io/badge/data-ECB%20Data%20Portal-003399)](https://data.ecb.europa.eu)
 
 Serving MCP tools to callers you did not write. The four are **audience**, **reach**, **budget**
-and **coverage**, and each is falsifiable by a test a reviewer can watch fail.
+and **coverage**, and each is falsifiable by a test a reviewer can watch fail. If you only open
+one file, open [`src/quenchz/coverage.py`]: it is the certificate below, and the reason twelve
+days asked for and eight delivered is a complete answer rather than a third of one.
 
 ```json
 {
