@@ -2,9 +2,13 @@
 
 WHY THIS EXISTS. The card at pnx89.github.io/QUENCHZ shows the output of a real run and four
 numbers about this repository. Both are committed, which means both can go stale. This writes
-them from the source of truth in one step, and `tests/test_docs.py` fails when what is
+them from the source of truth in one step, and `tests/test_capture.py` fails when what is
 committed stops matching a live run, so staleness is a red build rather than a quiet lie on a
 public page.
+
+That sentence named `tests/test_docs.py` until 28-8-2026 and no such file had ever existed. It
+was found while building a sibling from this pattern, which is the only reason it was found at
+all: nothing in this repository could catch a docstring describing an enforcement nobody built.
 
 WHAT IT WRITES.
     docs/evidence/demo.txt    stdout of the demo command, byte for byte
