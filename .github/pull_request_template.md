@@ -16,7 +16,6 @@
       `npm test`
 - [ ] No number in the README was edited by hand. Anything generated was regenerated.
 - [ ] The prose still describes the code. No claim in the README has quietly stopped being true.
-- [ ] Public behaviour that changed is in `CHANGELOG.md` under the unreleased heading.
 - [ ] No em dash and no en dash anywhere in the diff, prose or code.
 - [ ] Nothing added to the dependency tree without a stated reason and a look at its advisories.
 

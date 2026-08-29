@@ -6,7 +6,11 @@ whether the market was closed, whether the rate is not published yet, or whether
 is genuinely wrong. Those three are one silent absence, and telling them apart is the whole
 job of this module.
 
-`Coverage` is a REQUIRED field on every tool return, with no default anywhere on it. That is
+`Coverage` is a REQUIRED field on every tool return THAT CARRIES OBSERVATIONS, with no default
+anywhere on it. The qualifier matters and was missing here after the rest of the repository had
+been narrowed: `calendar.why` classifies one date and `series.catalogue` lists what exists, and
+a certificate on either would be a field with nothing to say, which is worse than no field
+because a reader would believe it meant something. That is
 deliberate and it is the only mechanism here that actually works: a field with a default is
 a field a caller forgets, and a coverage report nobody attached is indistinguishable from a
 window with nothing missing.

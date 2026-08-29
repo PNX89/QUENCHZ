@@ -41,12 +41,27 @@ tool that charged as well would bill a granted call twice, and because a charge 
 only when a tool actually runs makes every refusal free. That was measured: two hundred refused
 calls at no cost while a granted tool stopped at forty-five.
 
-THE HOST ALLOWLIST IS WRITTEN OUT RATHER THAN SWITCHED OFF. The SDK turns DNS-rebinding
-protection on by default with an EMPTY allowlist, so a server that configures nothing answers
-421 to everything, including itself. That is fail-closed and it is the right default, and the
-tempting response to meeting it is `enable_dns_rebinding_protection=False`. The hosts this
-server expects to be reached on are named instead, because a browser on the same machine as an
-agent is exactly the attacker this protection exists for.
+THE HOST ALLOWLIST IS WRITTEN OUT RATHER THAN LEFT TO THE DEFAULT, and this paragraph used to
+give the opposite reason. It said the SDK turns DNS-rebinding protection on with an empty
+allowlist, so an unconfigured server fails closed, and called that the right default. Measured
+against the installed SDK, both halves are wrong, and the SDK says so in its own source:
+
+    TransportSecurityMiddleware.__init__:
+        # If not specified, disable DNS rebinding protection by default for backwards
+        # compatibility
+        self.settings = settings or TransportSecuritySettings(
+            enable_dns_rebinding_protection=False)
+
+    Server.streamable_http_app:
+        # Auto-enable DNS rebinding protection for localhost (IPv4 and IPv6)
+
+So an unconfigured server FAILS OPEN on any bind address that is not loopback, and gets a
+populated loopback allowlist when it is. The bare `TransportSecuritySettings()` the old
+paragraph described is real as a class default and is never what the SDK constructs.
+
+That makes naming the hosts more important than the old reasoning suggested, not less: it is
+the difference between protection and none, rather than a way of relaxing something already
+strict. A browser on the same machine as an agent is exactly the attacker this exists for.
 
 Source: ECB statistics.
 """
