@@ -1,7 +1,12 @@
 """One shared upstream budget, and callers who cannot see each other.
 
 WHAT THE VENDOR TELLS YOU ABOUT ITS LIMITS, MEASURED RATHER THAN ASSUMED. Nothing. Three
-things, each checked and each a test in this repository:
+things, and it is worth being exact about which of them this repository can hold:
+finding 2 is asserted against the recorded responses on every run, and findings 1 and 3 were
+read from the vendor's documentation on 26-8-2026 and are not checked by anything here. This
+paragraph used to say all three were tests, which was the same overclaim it is arguing against.
+Capturing the documentation page would not fix it either: `tests/test_licence.py` requires every
+recorded URL to be under `/service/data/EXR/`, and a documentation page is not data.
 
   1. No page of the API documentation states a rate limit, a throttle, a fair-use number or a
      concurrency cap.

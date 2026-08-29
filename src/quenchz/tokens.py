@@ -52,16 +52,35 @@ class AudienceRestrictedVerifier:
                 algorithms=["RS256"],
                 audience=self._resource,
                 issuer=self._issuer,
-                # Every entry here is required rather than merely checked when present, and
-                # each one is separately tested, because two of them are load-bearing in a way
-                # that is not obvious. Without `sub` and `exp` in this list PyJWT accepts a
-                # token that omits them and the dictionary access below then raises an
-                # uncaught KeyError, which is a crash rather than a refusal. `aud` is belt and
-                # braces, since passing `audience` already enforces it. `iat` is hygiene: an
-                # access token that will not say when it was minted cannot be reasoned about.
+                # WHICH OF THESE ARE LOAD-BEARING, measured by removing them one at a time
+                # rather than reasoned about:
+                #
+                #   sub, exp, iat   removing any one turns a test red
+                #   aud, iss        removing either changes nothing, because `audience=` and
+                #                   `issuer=` above enforce them independently
+                #
+                # `sub` and `exp` are the sharp ones: without them PyJWT accepts a token that
+                # omits the claim and the dictionary access below then raises an uncaught
+                # KeyError, which is a crash rather than a refusal. `iat` is hygiene, an access
+                # token that will not say when it was minted cannot be reasoned about.
+                #
+                # `aud` and `iss` stay because the redundancy is the point: they would become
+                # the only enforcement the day somebody removes the two arguments above, and
+                # `test_the_belt_and_the_braces_are_both_real` asserts that both paths refuse.
                 options={"require": ["aud", "exp", "iat", "iss", "sub"]},
             )
-        except jwt.InvalidTokenError as refused:
+        except (jwt.InvalidTokenError, TypeError, ValueError) as refused:
+            # TypeError AND ValueError, NOT ONLY InvalidTokenError, and the two extras are a
+            # measured defect rather than defensive padding. PyJWT compares `exp`, `iat` and
+            # `nbf` numerically, so a token carrying one of them as a JSON list or object raises
+            # TypeError from int() deep inside the library. That escaped this method, escaped
+            # BearerAuthBackend.authenticate and escaped Starlette's AuthenticationMiddleware,
+            # so a malformed claim reached the caller as a 500 with a traceback instead of a 401.
+            #
+            # The token still has to carry a valid RS256 signature from the trusted issuer to
+            # get this far, so this is a robustness defect rather than an unauthenticated crash.
+            # A verifier that can be made to raise is still a verifier that answers something
+            # other than yes or no.
             self.last_refusal = Refusal(f"{type(refused).__name__}: {refused}")
             return None
 

@@ -156,12 +156,24 @@ def test_the_sdk_names_the_scope_it_denies() -> None:
 async def test_a_token_missing_any_required_claim_is_refused_and_does_not_crash(
     issuer: Issuer, verifier: AudienceRestrictedVerifier, omitted: str
 ) -> None:
-    """Every entry of the require list, one test each, so none of them is decoration.
+    """Every entry of the require list, one test each, and two of the five are not load-bearing.
 
-    Two of these are not belt and braces. Drop `sub` or `exp` from the list and PyJWT accepts
-    the token, after which this module's own dictionary access raises an uncaught KeyError.
-    That is a crash inside a verifier, which is a worse outcome than a refusal, so the
-    assertion is specifically that a refusal comes back rather than an exception escaping.
+    THE DOCSTRING USED TO SAY NONE OF THEM WAS DECORATION, and removing them one at a time says
+    otherwise:
+
+        dropped sub, exp or iat   this test goes red
+        dropped aud or iss        nothing changes
+
+    `audience=` and `issuer=` are passed to `jwt.decode` and enforce those two independently, so
+    those parametrisations pass whether or not the require list mentions them. That is not an
+    argument for deleting them, and `test_the_belt_and_the_braces_are_both_real` below says why:
+    it is an argument for knowing which of the two is holding, so that removing the other is a
+    decision rather than an accident.
+
+    `sub` and `exp` are the sharp ones. Drop either from the list and PyJWT accepts a token that
+    omits the claim, after which this module's own dictionary access raises an uncaught
+    KeyError: a crash inside a verifier, which is worse than a refusal. So the assertion is
+    specifically that a refusal comes back rather than an exception escaping.
     """
     now = int(datetime.datetime.now(datetime.UTC).timestamp())
     claims: dict[str, object] = {
@@ -177,3 +189,78 @@ async def test_a_token_missing_any_required_claim_is_refused_and_does_not_crash(
 
     assert await verifier.verify_token(token) is None
     assert omitted in str(verifier.last_refusal) or "Audience" in str(verifier.last_refusal)
+
+
+async def test_the_belt_and_the_braces_are_both_real(
+    issuer: Issuer, verifier: AudienceRestrictedVerifier
+) -> None:
+    """`aud` and `iss` are enforced twice, and this asserts BOTH paths rather than the pair.
+
+    The require list and the `audience=`/`issuer=` arguments each refuse these on their own, so
+    the suite could not tell a correct verifier from one that had lost either mechanism. Here
+    each path is exercised alone: a token with the wrong audience is refused by name, and a
+    token missing the claim entirely is refused by name, which are different code paths inside
+    PyJWT and produce different refusals.
+    """
+    now = int(datetime.datetime.now(datetime.UTC).timestamp())
+
+    def mint(**overrides: object) -> str:
+        claims: dict[str, object] = {
+            "iss": ISSUER,
+            "aud": RESOURCE,
+            "sub": "agent-a",
+            "iat": now,
+            "exp": now + 3600,
+            "scope": "rates:read",
+        }
+        claims.update(overrides)
+        return jwt.encode(claims, issuer._private_key_pem, algorithm="RS256")
+
+    assert await verifier.verify_token(mint(aud="http://elsewhere/mcp")) is None
+    assert "Audience" in str(verifier.last_refusal)
+
+    assert await verifier.verify_token(mint(iss="http://elsewhere")) is None
+    assert "Issuer" in str(verifier.last_refusal)
+
+    # And the require list, on its own, for a claim the arguments cannot see: an ABSENT claim
+    # reaches a different branch of PyJWT from a wrong one.
+    absent = mint()
+    claims = jwt.decode(absent, options={"verify_signature": False})
+    del claims["iat"]
+    assert (
+        await verifier.verify_token(jwt.encode(claims, issuer._private_key_pem, algorithm="RS256"))
+        is None
+    )
+    assert "iat" in str(verifier.last_refusal)
+
+
+@pytest.mark.parametrize("shape", [[1, 2], {"at": 1}, "soon"])
+async def test_a_claim_of_the_wrong_json_type_is_refused_rather_than_raised(
+    issuer: Issuer, verifier: AudienceRestrictedVerifier, shape: object
+) -> None:
+    """A verifier that can be made to raise answers something other than yes or no.
+
+    PyJWT compares `exp`, `iat` and `nbf` numerically, so a token carrying one as a JSON list or
+    object raised TypeError from int() deep inside the library. It escaped verify_token, escaped
+    BearerAuthBackend.authenticate and escaped Starlette's AuthenticationMiddleware, so under
+    uvicorn a malformed claim was a 500 with a traceback rather than a 401.
+
+    The existing coverage was for claims that are OMITTED, which is a different branch entirely,
+    and that is why five parametrisations of a required-claim test never found this.
+    """
+    now = int(datetime.datetime.now(datetime.UTC).timestamp())
+    for claim in ("exp", "iat"):
+        claims: dict[str, object] = {
+            "iss": ISSUER,
+            "aud": RESOURCE,
+            "sub": "agent-a",
+            "iat": now,
+            "exp": now + 3600,
+            "scope": "rates:read",
+        }
+        claims[claim] = shape
+        token = jwt.encode(claims, issuer._private_key_pem, algorithm="RS256")
+        assert await verifier.verify_token(token) is None, (
+            f"a token whose {claim} is a {type(shape).__name__} was accepted"
+        )
+        assert verifier.last_refusal is not None

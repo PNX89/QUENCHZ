@@ -17,6 +17,7 @@ import pytest
 from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
 from starlette.applications import Starlette
 
+from quenchz import server as server_module
 from quenchz.issuer import RESOURCE, SOMEBODY_ELSE, Issuer
 from quenchz.server import ALLOWED_HOSTS, build_app, build_server
 
@@ -113,9 +114,25 @@ def test_the_transport_is_given_no_required_scopes(issuer: Issuer) -> None:
 def test_dns_rebinding_protection_is_configured_rather_than_switched_off(
     issuer: Issuer,
 ) -> None:
-    """The SDK fails closed with an empty allowlist. The fix must not be to disable it."""
+    """The SDK fails OPEN on a non-loopback bind, so the allowlist is protection, not a relaxation.
+
+    THIS TEST USED TO PIN THE WRONG FACT AND THE MODULE DOCSTRING REPEATED IT. It asserted the
+    CLASS default, `TransportSecuritySettings()`, which does have protection on with an empty
+    allowlist, and concluded the SDK fails closed. The SDK never constructs that object: the
+    middleware substitutes `enable_dns_rebinding_protection=False` when it is given nothing,
+    with a comment in its own source saying it does so for backwards compatibility.
+
+    What is pinned now is what the SDK actually does, so a future version that changes it turns
+    this red and sends somebody to reread the paragraph rather than leaving it wrong.
+    """
     assert TransportSecuritySettings().enable_dns_rebinding_protection is True
-    assert TransportSecuritySettings.model_fields["allowed_hosts"].default_factory is not None
+    assert TransportSecurityMiddleware().settings.enable_dns_rebinding_protection is False, (
+        "the SDK now enables protection when given no settings, so this server's docstring "
+        "about failing open on a non-loopback bind needs rereading rather than this test relaxing"
+    )
+    assert "fail-closed" not in (server_module.__doc__ or ""), (
+        "the module docstring calls the SDK default fail-closed again, and it is fail-open"
+    )
 
     # The settings do not live on `app.user_middleware`. They are held by the session manager
     # inside the /mcp route, which is worth knowing before asserting against the wrong object.
@@ -125,8 +142,12 @@ def test_dns_rebinding_protection_is_configured_rather_than_switched_off(
 
     assert settings is not None, "no transport security is configured at all"
     assert settings.enable_dns_rebinding_protection is True, "it must not be switched off"
-    assert settings.allowed_hosts == ALLOWED_HOSTS
-    assert TransportSecurityMiddleware is not None
+    # A LITERAL, NOT THE CONSTANT THE PRODUCTION CODE READS. Comparing against ALLOWED_HOSTS
+    # made this hold for any value: setting it to ["*"] passed. Mutation found that.
+    assert settings.allowed_hosts == ["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*"]
+    assert settings.allowed_hosts == ALLOWED_HOSTS, (
+        "the constant and the literal above have diverged, so one of them is stale"
+    )
 
 
 async def test_a_host_outside_the_allowlist_is_refused(issuer: Issuer) -> None:
@@ -237,3 +258,38 @@ async def test_calendar_why_does_not_claim_a_rate_existed_before_the_series(issu
             )
     assert "before_the_series" in answer.text
     assert '"closed_because": null' not in answer.text
+
+
+async def test_a_browser_origin_outside_the_allowlist_is_refused(issuer: Issuer) -> None:
+    """The allowlist has two halves and only one of them was ever exercised.
+
+    `build_app` sets `allowed_origins` beside `allowed_hosts`, and no test and no TypeScript
+    proof ever sent an `Origin` header, so that half could be emptied with the suite green.
+    Measured on the mutant: a legitimate browser client flips from 200 to 403 and nothing sees
+    it, because an empty allowlist rejects every origin including the server's own.
+
+    Origin is the header a browser sets and a script cannot forge, which is why it is the half
+    that matters for the attack this protection is named after.
+    """
+    from quenchz.budget import ManualClock
+
+    app = build_app(issuer, clock=ManualClock())
+    async with app.router.lifespan_context(app):
+        transport = httpx2.ASGITransport(app=app)
+        async with httpx2.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
+            headers = dict(HEADERS)
+            headers["Authorization"] = (
+                f"Bearer {issuer.mint(client_id='agent-alpha', scopes=['rates:read'])}"
+            )
+            allowed = await client.post(
+                "/mcp", json=INITIALIZE, headers={**headers, "Origin": "http://127.0.0.1"}
+            )
+            refused = await client.post(
+                "/mcp", json=INITIALIZE, headers={**headers, "Origin": "http://evil.example.com"}
+            )
+
+    assert refused.status_code == 403, "an origin nobody named was served"
+    assert allowed.status_code != 403, (
+        "the server's own origin is refused, which is what an EMPTY allowed_origins list does "
+        "and is indistinguishable from working protection unless a valid origin is also tried"
+    )

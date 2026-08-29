@@ -6,8 +6,14 @@ window was closed. Another is a body in a completely different format from the o
 asked for, which is not correct and is the case a client is most likely to swallow, because
 `response.ok` is true and `len(body)` is large.
 
-So nothing here branches on the status line alone. Every outcome is decided by looking at
-what actually arrived, and a test asserts that property against the recorded responses.
+So NO 200 IS TRUSTED ON ITS STATUS LINE. The three outcomes that share it are told apart by
+what the body contains, and a test asserts that against the recorded responses.
+
+The wider claim used to be made here, that nothing branches on the status alone, and it was not
+true: 404, 400 and 5xx are decided before the body is looked at, which is correct. A body sent
+alongside a failure is not evidence about anything, and the same CSV under four statuses gives
+four different outcomes on purpose. The test named as proof of the wider claim only ever
+exercised the 200 family, so it could not have seen the gap.
 
     200 + CSV with rows      observations
     200 + zero bytes         an empty window, and this is a normal answer
