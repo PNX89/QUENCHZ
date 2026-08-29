@@ -86,3 +86,37 @@ def test_the_capture_script_cannot_quietly_wander_off_the_dataflow() -> None:
     urls = [line for line in source.splitlines() if "https://" in line and "BASE" not in line]
     stray = [u for u in urls if "data-api.ecb.europa.eu" in u]
     assert stray == [], f"a URL bypassing BASE was added to the capture script: {stray}"
+
+
+def test_the_wheel_carries_no_vendor_bytes_and_says_so_when_asked_for_them() -> None:
+    """The recordings are not package data, and the failure has to admit it.
+
+    The distinction is a licence one before it is a packaging one. The ECB permits reuse of its
+    statistics WITHOUT MODIFICATION, so these bytes are kept exactly as they arrived, for an
+    argument about provenance. That is a reason to hold them in the repository and a reason not
+    to ship them inside a wheel that a user might redistribute.
+
+    The consequence was a bad error. `CASSETTES` is `parents[2] / "data" / "cassettes"`, which
+    is the repository root from a checkout and `<prefix>/lib/python3.x/data/cassettes` from
+    site-packages, so `build_server(issuer)` on an installed copy raised `FileNotFoundError`
+    on `index.json` three frames down with no hint of why. It now names the situation.
+    """
+    import pathlib
+
+    import pytest
+
+    from quenchz.upstream import CassetteTransport
+
+    with pytest.raises(FileNotFoundError) as complaint:
+        CassetteTransport(directory=pathlib.Path("/nonexistent/site-packages/data/cassettes"))
+    message = str(complaint.value)
+    assert "live in the repository rather than in the wheel" in message
+    assert "CassetteTransport(directory=" in message, (
+        "the error does not say what to pass, so a reader gets a diagnosis and no remedy"
+    )
+
+    manifest = (REPO / "pyproject.toml").read_text(encoding="utf-8")
+    assert "data/cassettes" not in manifest, (
+        "pyproject now names the cassette directory, which suggests the wheel has started "
+        "shipping vendor bytes. That is a licence decision and not a packaging convenience"
+    )
