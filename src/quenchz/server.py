@@ -59,6 +59,7 @@ from typing import Any
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
@@ -137,16 +138,47 @@ def build_server(
 
     @server.tool(name="rates.window", description="Euro reference rates across a date window.")
     def rates_window(cassette: str, start: str, end: str) -> dict[str, Any]:
-        return gateway.rates_window(
-            cassette,
-            datetime.date.fromisoformat(start),
-            datetime.date.fromisoformat(end),
-            datetime.datetime.now(datetime.UTC),
-        )
+        """Everything a caller can get wrong, turned into an answer rather than a traceback.
+
+        THE SAME ARGUMENT AS THE BUDGET REFUSAL ABOVE, applied to the other three things a
+        caller controls. `ToolError` is the SDK's word for "expected"; anything else is logged
+        with a four frame anyio traceback and reaches the caller as
+        `Error executing tool rates.window`, which names the tool and nothing else. Measured
+        before this: a start of `0000-00-00` produced `ValueError: year 0 is out of range`, an
+        unrecorded cassette name produced a `KeyError` that ENUMERATED EVERY RECORDING INTO THE
+        LOG, and a window ending at 9999-12-31 produced `OverflowError`. All three arrived as
+        HTTP 200 with `isError: true` and the same six words.
+
+        What is quoted back is chosen rather than convenient. The caller's own dates are quoted,
+        because it sent them. The list of recordings is not, because knowing which names exist
+        is exactly what the concealment layer withholds from a caller with no scope for the
+        catalogue, and a KeyError is a poor place to give it away.
+        """
+        try:
+            first = datetime.date.fromisoformat(start)
+            last = datetime.date.fromisoformat(end)
+        except ValueError as broken:
+            raise ToolError(
+                f"start and end must be dates as YYYY-MM-DD; got {start!r} and {end!r}"
+            ) from broken
+        try:
+            return gateway.rates_window(
+                cassette,
+                first,
+                last,
+                datetime.datetime.now(datetime.UTC),
+            )
+        except KeyError as unknown:
+            raise ToolError(f"no recording named {cassette!r}") from unknown
+        except ValueError as refused:
+            raise ToolError(str(refused)) from refused
 
     @server.tool(name="calendar.why", description="Why no rate was published on a given date.")
     def calendar_why(day: str) -> dict[str, Any]:
-        parsed = datetime.date.fromisoformat(day)
+        try:
+            parsed = datetime.date.fromisoformat(day)
+        except ValueError as broken:
+            raise ToolError(f"day must be a date as YYYY-MM-DD; got {day!r}") from broken
         if parsed < SERIES_BEGINS:
             # Otherwise this answers "no reason, a rate was published" for every date before
             # the series existed, including 1 January 1999, three days before its first row.

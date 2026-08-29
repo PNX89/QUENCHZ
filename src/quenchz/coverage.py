@@ -133,6 +133,23 @@ def _classify(day: datetime.date, now: datetime.datetime) -> Absence:
             raise AssertionError(f"closing reason not handled by this match: {unreachable!r}")
 
 
+#: The widest window worth answering, and the number is chosen rather than round.
+#:
+#: The series starts on 1999-01-04, so its first day to the end of 2040 is 15,338 days: every
+#: question anybody can have about it plus fifteen years of headroom.
+#:
+#: THE FIRST VALUE HERE WAS 13,500 AND IT WAS ELEVEN DAYS TOO SMALL. It was reasoned from
+#: "1999 to 2035, about 13,500" without the subtraction being done, and it refused
+#: 1999-01-04 to 2035-12-31, which is 13,511 days and a question somebody would actually ask.
+#: The test asserting the bound admits every real window is what found it, which is why that
+#: test exists beside the one asserting the bound refuses an absurd one: a limit that blocks a
+#: genuine question is a worse defect than the walk it was added to prevent.
+#:
+#: A constant rather than a computation from today, because a limit that moves with the clock
+#: is a limit whose failures cannot be reproduced.
+MAX_WINDOW_DAYS = 15_338
+
+
 def reconstruct(
     requested_from: datetime.date,
     requested_to: datetime.date,
@@ -154,11 +171,43 @@ def reconstruct(
         raise ValueError(f"window ends before it starts: {requested_from} to {requested_to}")
     if now.tzinfo is None:
         raise ValueError("now must be timezone aware; a naive clock silently assumes a zone")
+    # A THIRD GUARD, AND THE TWO ABOVE IT ARE WHY IT WAS MISSING. They bound the DIRECTION of
+    # the window and the awareness of the clock, which reads like the window has been validated.
+    # Its SPAN was not bounded at all. Measured before this: 0001-01-01 to 9999-12-30 walked
+    # 3,652,058 days in six seconds, from a 185 byte request, on a worker thread holding the
+    # GIL, and returned 200. A window ending at date.max raised OverflowError from the final
+    # increment instead, which is a crash rather than a refusal.
+    stray = sorted(day for day in delivered if not requested_from <= day <= requested_to)
+    if stray:
+        # RAISE RATHER THAN CLIP, which is the opposite of what looks helpful here. Clipping
+        # would make the caller's own clip in `gateway.rates_window` redundant, and a function
+        # that silently ignores part of its input is how the certificate below came to be able
+        # to say `complete: True` while reporting a gap: `len(delivered)` counted dates the walk
+        # never visited. It was not reachable through `rates.window`, whose one caller clips
+        # first, so this is a contract nobody was holding rather than a live wire.
+        raise ValueError(
+            f"{len(stray)} delivered dates fall outside the window this certificate is about, "
+            f"the first being {stray[0]}. Clip before asking, because a certificate counting "
+            f"observations it did not examine describes a different window from the one it names"
+        )
+    span = (requested_to - requested_from).days + 1
+    if span > MAX_WINDOW_DAYS:
+        raise ValueError(
+            f"a window of {span:,} days was asked for and {MAX_WINDOW_DAYS:,} is the most this "
+            f"answers, which is the series from its first day to well past today. This is walked "
+            f"a day at a time, so the cost of answering is the width of the question"
+        )
 
     absent: dict[Absence, int] = dict.fromkeys(Absence, 0)
     expected = 0
-    day = requested_from
-    while day <= requested_to:
+    # COUNTED FORWARD FROM THE START RATHER THAN INCREMENTED PAST THE END, and the difference is
+    # a real defect rather than a style. `day += one_day` at the top of the last iteration
+    # constructs the day AFTER `requested_to`, so a window ending on 9999-12-31 raised
+    # OverflowError from the increment itself: a window inside the span limit above, refused by
+    # a crash rather than by a check. Building each date from an offset never constructs one
+    # outside the window.
+    for offset in range(span):
+        day = requested_from + datetime.timedelta(days=offset)
         if day in delivered:
             expected += 1
         elif series_begins is not None and day < series_begins:
@@ -170,7 +219,6 @@ def reconstruct(
             absent[_classify(day, now)] += 1
         else:
             absent[Absence.TARGET_CLOSED] += 1
-        day += datetime.timedelta(days=1)
 
     return Coverage(
         requested_from=requested_from,
