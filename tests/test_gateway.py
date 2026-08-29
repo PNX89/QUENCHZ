@@ -220,7 +220,30 @@ def test_an_outcome_this_match_has_not_been_taught_raises(monkeypatch: pytest.Mo
             detail="a classification this gateway has never seen",
         ),
     )
-    with pytest.raises(AssertionError, match="not handled by this match"):
+    with pytest.raises(AssertionError, match="Expected code to be unreachable"):
         _gateway(ManualClock()).rates_window(
             "usd-eur-daily-one-month", datetime.date(2026, 7, 1), datetime.date(2026, 7, 31), WHEN
         )
+
+
+def test_every_outcome_is_named_in_the_gateway_match() -> None:
+    """`Outcome.VENDOR_UNAVAILABLE` did not exist, and adding it was a silent change.
+
+    Before this, every status that was not 200, 400 or 404 fell through to
+    `REJECTED_PARAMETERS`, so the vendor's own documented 500, 501 and 503 told a caller its
+    parameters were wrong. Adding the member type checked and the suite passed, because the
+    match ended in a catch-all that gave mypy a total match.
+
+    Read from the source, so a member added without an arm is caught here as well as by mypy,
+    and a reader of the tests can see the rule without running the type checker.
+    """
+    import inspect
+
+    from quenchz.upstream import Outcome
+
+    source = inspect.getsource(Gateway.rates_window)
+    unnamed = [member.name for member in Outcome if f"Outcome.{member.name}" not in source]
+    assert unnamed == [], (
+        f"these outcomes have no arm in the gateway match: {unnamed}. Falling through means "
+        f"answering a caller about a response nobody classified"
+    )

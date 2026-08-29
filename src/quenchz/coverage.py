@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime
 from enum import StrEnum
+from typing import assert_never
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict
@@ -105,9 +106,25 @@ def _published_yet(day: datetime.date, now: datetime.datetime) -> bool:
 
 
 def _classify(day: datetime.date, now: datetime.datetime) -> Absence:
-    """Why `day` is absent. Exhaustive by name, so a new closing reason breaks the build."""
-    reason = closing_reason(day)
-    match reason:
+    """Why `day` is absent, for every reason the calendar has.
+
+    TWO THINGS WERE WRONG HERE AND THE DOCSTRING WAS THE THIRD. It said "exhaustive by name, so
+    a new closing reason breaks the build", and adding a member to `ClosingReason` type checked
+    and passed, because `case unreachable` gave mypy a total match and moved the check to
+    run time. It also had no arm for `SPECIAL_CLOSURE`, which is a reason `closing_reason`
+    genuinely returns, on the dates in `SPECIAL_CLOSURES`.
+
+    That combination was harmless only by luck. `reconstruct` called this exclusively inside
+    `elif closing_reason(day) is None`, so the seven member arm was unreachable, the function
+    re-read a reason its caller had already read, and a special closure never got here. Anybody
+    tidying away the dead arm by calling this unconditionally, which is the obvious tidy, would
+    have turned a real ECB closure into an AssertionError.
+
+    So it is called unconditionally now, `SPECIAL_CLOSURE` is named, and `assert_never` replaces
+    the catch-all: adding a member is a mypy error at build time, which is what the docstring
+    claimed all along.
+    """
+    match closing_reason(day):
         case (
             ClosingReason.WEEKEND
             | ClosingReason.NEW_YEARS_DAY
@@ -116,6 +133,7 @@ def _classify(day: datetime.date, now: datetime.datetime) -> Absence:
             | ClosingReason.LABOUR_DAY
             | ClosingReason.CHRISTMAS_DAY
             | ClosingReason.SAINT_STEPHENS_DAY
+            | ClosingReason.SPECIAL_CLOSURE
         ):
             return Absence.TARGET_CLOSED
         case None:
@@ -126,11 +144,8 @@ def _classify(day: datetime.date, now: datetime.datetime) -> Absence:
                 if _published_yet(day, now)
                 else Absence.NOT_YET_PUBLISHED
             )
-        case unreachable:  # pragma: no cover
-            # Not a catch-all that quietly does something sensible. A closing reason added to
-            # the enum without being taught to this match arrives here, and a guard that
-            # silently passed it through would be dead code the day it was written.
-            raise AssertionError(f"closing reason not handled by this match: {unreachable!r}")
+        case unhandled:
+            assert_never(unhandled)
 
 
 #: The widest window worth answering, and the number is chosen rather than round.
@@ -210,15 +225,19 @@ def reconstruct(
         day = requested_from + datetime.timedelta(days=offset)
         if day in delivered:
             expected += 1
-        elif series_begins is not None and day < series_begins:
+            continue
+        if series_begins is not None and day < series_begins:
             # Nothing was ever due here, so it is neither a gap nor a closure, and it does not
             # count towards what was expected.
             absent[Absence.BEFORE_THE_SERIES] += 1
-        elif closing_reason(day) is None:
+            continue
+        # ONE CALL, and this used to ask the calendar twice: once here as `is None` and once
+        # again inside `_classify`. That is what made the classifier's seven member arm
+        # unreachable, and left a real closing reason missing from it without anything noticing.
+        absence = _classify(day, now)
+        if absence is not Absence.TARGET_CLOSED:
             expected += 1
-            absent[_classify(day, now)] += 1
-        else:
-            absent[Absence.TARGET_CLOSED] += 1
+        absent[absence] += 1
 
     return Coverage(
         requested_from=requested_from,

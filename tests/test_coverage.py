@@ -135,10 +135,41 @@ def test_an_unhandled_closing_reason_raises_rather_than_passing_through(
     A catch-all that quietly returned something sensible would make the exhaustive match dead
     code the day it was written. This forces an unknown reason through it and requires a
     raise, which is what proves the last arm is reachable and doing work.
+
+    The arm is `assert_never` now rather than a hand-written raise, so the message is the one
+    the standard library writes. That swap is the point: the old form gave mypy a total match,
+    which is why adding a member to `ClosingReason` used to type check and pass.
     """
     monkeypatch.setattr(coverage_module, "closing_reason", lambda _day: "bank-holiday-monday")
-    with pytest.raises(AssertionError, match="not handled by this match"):
+    with pytest.raises(AssertionError, match="Expected code to be unreachable"):
         coverage_module._classify(datetime.date(2026, 8, 24), LONG_AFTER)
+
+
+def test_every_closing_reason_is_named_in_the_match_that_claims_to_be_exhaustive() -> None:
+    """The half the run-time test cannot reach, and the half that was actually broken.
+
+    `ClosingReason.SPECIAL_CLOSURE` was a member `closing_reason` genuinely returns and the
+    match had no arm for it. Nothing failed, because `reconstruct` only ever called `_classify`
+    when the reason was None, so the seven member arm was unreachable and a special closure
+    never arrived. That is not a test passing, it is a test that could not run.
+
+    Read from the source rather than by calling, because a member added and not handled is a
+    static fact. mypy now refuses it too, via `assert_never`, and this says so in the suite so
+    that a reader of the tests can see the rule without running the type checker.
+    """
+    import inspect
+
+    from quenchz.target_calendar import ClosingReason
+
+    source = inspect.getsource(coverage_module._classify)
+    unnamed = [
+        member.name for member in ClosingReason if f"ClosingReason.{member.name}" not in source
+    ]
+    assert unnamed == [], (
+        f"these closing reasons have no arm in the match: {unnamed}. The match is what decides "
+        f"whether a day counts towards what was expected, so a missing one is a miscount rather "
+        f"than a crash"
+    )
 
 
 def test_every_absence_reason_is_always_present_in_the_report() -> None:
