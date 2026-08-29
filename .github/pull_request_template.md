@@ -12,6 +12,8 @@
       `uv run ruff format --check .`
       `uv run mypy`
       `uv run pytest -q`
+      `npm ci`
+      `npm test`
 - [ ] No number in the README was edited by hand. Anything generated was regenerated.
 - [ ] The prose still describes the code. No claim in the README has quietly stopped being true.
 - [ ] Public behaviour that changed is in `CHANGELOG.md` under the unreleased heading.
