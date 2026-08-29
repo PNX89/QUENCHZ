@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import json
 import pathlib
+import time
 
 import pytest
 
-from quenchz.budget import FairBudget, ManualClock, NaiveSharedBucket
+from quenchz.budget import FairBudget, ManualClock, NaiveSharedBucket, WallClock
 
 CASSETTES = pathlib.Path(__file__).resolve().parents[1] / "data" / "cassettes"
 
@@ -193,3 +194,64 @@ def test_the_spare_is_capped_too_and_not_only_the_reserves() -> None:
     assert sum(budget.request("a").admitted for _ in range(1000)) == 60
     clock.advance(86_400.0)
     assert sum(budget.request("a").admitted for _ in range(1000)) == 60, "a day banked nothing"
+
+
+def test_a_server_built_with_no_clock_recovers_capacity_as_time_passes() -> None:
+    """The defect this repository shipped: a limiter whose clock never moved.
+
+    `build_server` defaulted to `ManualClock`, which only a test advances, so every server built
+    outside this suite had a frozen one. `_refill` saw `elapsed == 0` for ever, the
+    `refill_per_second=60` argument could not act on anything, and the budget stopped being a
+    RATE and became a whole-life allowance: 60 calls served, then refusal until the process was
+    restarted. Nothing failed and nothing logged, and the suite could not see it, because a test
+    that advances the clock itself never notices that nothing else does.
+
+    Real time is waited on here rather than simulated, because simulating it is exactly what hid
+    this. The wait is small: the reserve refills at 30 per second per caller, so a tenth of a
+    second buys three admissions and the test is not measuring the sleep.
+    """
+    budget = FairBudget(capacity=60, refill_per_second=60, callers=("alpha",), clock=WallClock())
+
+    spent = 0
+    while budget.request("alpha").admitted:
+        spent += 1
+        assert spent < 1000, "the budget never refused, so nothing below is being measured"
+    assert spent > 0
+
+    assert not budget.request("alpha").admitted
+    time.sleep(0.1)
+    assert budget.request("alpha").admitted, (
+        "a tenth of a second bought nothing at 60 per second, so the clock is not moving and "
+        "this budget is a whole-life allowance rather than a rate"
+    )
+
+
+def test_the_wall_clock_is_monotonic_rather_than_the_time_of_day() -> None:
+    """A limiter reading the wall clock hands out free capacity when a clock correction moves it
+    backwards, which is the one moment an operator least wants a rate limit to open up.
+
+    Asserted against `time.monotonic` directly rather than by patching, so the test says which
+    counter is required rather than which call is made.
+    """
+    clock = WallClock()
+    before = time.monotonic()
+    reading = clock.now
+    after = time.monotonic()
+    assert before <= reading <= after
+    assert clock.now >= reading, "a second reading went backwards, so this is not a monotonic one"
+
+
+def test_the_manual_clock_is_still_available_for_a_proof_that_needs_a_frozen_one() -> None:
+    """Replacing one clock with the other would have been the wrong fix.
+
+    The interop proof freezes time on purpose, so that the number of admitted calls is a fact
+    about the budget rather than about how fast the machine running it happens to be.
+    """
+    frozen = ManualClock()
+    budget = FairBudget(capacity=60, refill_per_second=60, callers=("alpha",), clock=frozen)
+    while budget.request("alpha").admitted:
+        pass
+    time.sleep(0.05)
+    assert not budget.request("alpha").admitted
+    frozen.advance(1.0)
+    assert budget.request("alpha").admitted

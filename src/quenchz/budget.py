@@ -34,9 +34,25 @@ Source: ECB statistics.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
+from typing import Protocol
 
-__all__ = ["Admission", "FairBudget", "ManualClock", "NaiveSharedBucket"]
+__all__ = ["Admission", "Clock", "FairBudget", "ManualClock", "NaiveSharedBucket", "WallClock"]
+
+
+class Clock(Protocol):
+    """Whatever answers the question "how long has it been".
+
+    A PROTOCOL RATHER THAN A CLASS, because the two implementations have nothing in common but
+    the answer: one adds up what a test told it, the other reads a counter the operating system
+    keeps. Naming the shape is also what makes the defect below impossible to reintroduce
+    quietly, since `FairBudget` used to declare `clock: ManualClock` and thereby require the
+    only clock that never moves on its own.
+    """
+
+    @property
+    def now(self) -> float: ...
 
 
 @dataclass(slots=True)
@@ -47,6 +63,29 @@ class ManualClock:
 
     def advance(self, seconds: float) -> None:
         self.now += seconds
+
+
+class WallClock:
+    """Time as it passes, which is what a server needs and what this module used to lack.
+
+    THE DEFECT THIS FIXES, because it is worth stating rather than quietly patching. `ManualClock`
+    was the only clock in the tree and `build_server` defaulted to it, so every server anybody
+    built outside the tests had a frozen clock. `_refill` computed `elapsed` as zero for ever,
+    `refill_per_second` was a constructor argument nothing could act on, and the budget was a
+    WHOLE LIFE allowance rather than a rate: the process served 60 calls and then refused
+    everything until it was restarted. Nothing failed, nothing logged, and the tests all passed,
+    because a test that advances the clock itself cannot notice that nothing else ever does.
+
+    `monotonic` rather than `time`, and the difference is not academic here. A limiter reading
+    the wall clock hands out free capacity when a clock correction moves it backwards, which is
+    the one moment an operator least wants a rate limit to open up.
+    """
+
+    __slots__ = ()
+
+    @property
+    def now(self) -> float:
+        return time.monotonic()
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +100,7 @@ class NaiveSharedBucket:
 
     capacity: float
     refill_per_second: float
-    clock: ManualClock
+    clock: Clock
     _tokens: float = field(init=False)
     _last: float = field(init=False)
 
@@ -93,7 +132,7 @@ class FairBudget:
     capacity: float
     refill_per_second: float
     callers: tuple[str, ...]
-    clock: ManualClock
+    clock: Clock
     reserve_fraction: float = 0.5
     _reserve: dict[str, float] = field(init=False)
     _spare: float = field(init=False)

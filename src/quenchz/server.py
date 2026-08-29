@@ -63,7 +63,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 
-from quenchz.budget import FairBudget, ManualClock
+from quenchz.budget import Clock, FairBudget, WallClock
 from quenchz.concealment import ConcealTheSurface
 from quenchz.gateway import Caller, Gateway
 from quenchz.issuer import ISSUER, RESOURCE, Issuer
@@ -95,7 +95,7 @@ def build_server(
     issuer: Issuer,
     *,
     transport: Transport | None = None,
-    clock: ManualClock | None = None,
+    clock: Clock | None = None,
 ) -> MCPServer:
     """Wire the gateway to MCP. The interesting arguments are the ones NOT passed."""
     toolset = _toolset()
@@ -105,7 +105,12 @@ def build_server(
             capacity=60,
             refill_per_second=60,
             callers=CALLERS,
-            clock=clock or ManualClock(),
+            # A WALL CLOCK BY DEFAULT, and it used to be a manual one. Defaulting to the
+            # clock that only a test moves gave every server built outside this suite a
+            # frozen one: 60 calls served, then refusal for the life of the process,
+            # silently, while refill_per_second sat in the constructor doing nothing.
+            # ManualClock is still what the interop proof passes, deliberately.
+            clock=clock or WallClock(),
         ),
         transport=transport or CassetteTransport(),
     )
