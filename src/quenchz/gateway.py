@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, assert_never
 
 from quenchz.budget import FairBudget
 from quenchz.coverage import reconstruct
@@ -95,11 +95,17 @@ class Gateway:
                 raise ValueError(f"the vendor has no such series: {reading.detail}")
             case Outcome.REJECTED_PARAMETERS:
                 raise ValueError(f"the vendor rejected the request: {reading.detail}")
-            case unreachable:  # pragma: no cover
-                # Not a catch-all that quietly answers anyway. An Outcome added without being
-                # taught to this match arrives here, and the alternative is handing a caller a
-                # confident certificate built from a response nobody classified.
-                raise AssertionError(f"outcome not handled by this match: {unreachable!r}")
+            case Outcome.VENDOR_UNAVAILABLE:
+                # Named separately from a rejected request on purpose. Whoever is on call needs
+                # to know whether to read the request or the vendor's status page, and this
+                # branch is the only place that distinction is still available.
+                raise ValueError(f"the vendor could not answer: {reading.detail}")
+            case unhandled:
+                # assert_never RATHER THAN A CATCH-ALL, and the difference is when it fires. The
+                # previous form raised at run time and gave mypy a total match, so adding
+                # VENDOR_UNAVAILABLE to the enum type checked, passed the suite, and would have
+                # reached a caller as a rejected request. This is a build error instead.
+                assert_never(unhandled)
 
         delivered = {
             day: value

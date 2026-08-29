@@ -17,6 +17,7 @@ from typing import Any
 import httpx2
 import pytest
 
+from quenchz import concealment as concealment_module
 from quenchz.budget import FairBudget, ManualClock
 from quenchz.concealment import ConcealTheSurface
 from quenchz.issuer import Issuer
@@ -217,3 +218,52 @@ async def test_the_budget_refusal_over_mcp_names_nothing(issuer: Issuer) -> None
     text = spent["content"][0]["text"]
     for forbidden in ("series", "catalogue", "scope", "rates", "Unknown tool"):
         assert forbidden not in text, f"the budget refusal leaks {forbidden!r}"
+
+
+def test_the_object_shaped_result_is_filtered_and_not_only_the_dict_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The branch the module was written for, which no test had ever reached.
+
+    The filter handles two shapes. Every test and every proof drives the dict one, because that
+    is what this SDK version returns. The object arm existed for the day the SDK returns a model
+    instead, which is the whole reason the module's docstring says a shape it does not recognise
+    must raise rather than pass through.
+
+    That arm could be DELETED and the suite stayed green. Removing the list comprehension so the
+    method fell straight to `return result` left an object-shaped response completely unfiltered,
+    which is the leak this module exists to prevent, and nothing objected. `object()` and
+    `{"something": "else"}` both raise before reaching it, so the refusal test could not cover it
+    either.
+
+    Driven directly rather than over HTTP, since HTTP cannot produce the shape at all here.
+    """
+
+    class Named:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class ListResult:
+        def __init__(self, tools: list[Named]) -> None:
+            self.tools = tools
+
+    concealer = ConcealTheSurface(
+        Toolset(
+            [
+                Tool("visible", "rates:read", lambda **_: None, "a tool this caller may see"),
+                Tool("concealed", "admin", lambda **_: None, "a tool it may not"),
+            ]
+        ),
+        FairBudget(capacity=60, refill_per_second=60, callers=("a",), clock=ManualClock()),
+    )
+    # The scopes a request would have carried. Patched rather than faked through HTTP because
+    # the object shape cannot be produced over HTTP by this SDK version at all, which is the
+    # reason the branch had no coverage in the first place.
+    monkeypatch.setattr(concealment_module, "_granted_scopes", lambda: frozenset({"rates:read"}))
+    result = ListResult([Named("visible"), Named("concealed")])
+    filtered = concealer._filter(result)
+
+    assert [tool.name for tool in filtered.tools] == ["visible"], (
+        "an object shaped tools/list came back carrying a tool this caller has no scope for"
+    )
+    assert filtered is result, "the object was replaced rather than filtered in place"
