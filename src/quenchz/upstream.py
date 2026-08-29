@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import csv
 import datetime
+import hashlib
 import io
 import json
 import pathlib
@@ -29,7 +30,14 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
-__all__ = ["CassetteTransport", "Outcome", "Reading", "Transport", "read"]
+__all__ = [
+    "CassetteTransport",
+    "CorruptedRecording",
+    "Outcome",
+    "Reading",
+    "Transport",
+    "read",
+]
 
 CASSETTES = pathlib.Path(__file__).resolve().parents[2] / "data" / "cassettes"
 
@@ -71,14 +79,52 @@ class Transport(Protocol):
     def fetch(self, name: str) -> RawResponse: ...
 
 
+class CorruptedRecording(Exception):
+    """A body on disk that is not the body that was recorded.
+
+    Its own class, rather than a ValueError, because the caller's choices differ: a rejected
+    parameter is the caller's problem and this is the machine's. Nothing here can recover from
+    it, and the only honest response is to stop.
+    """
+
+
 class CassetteTransport:
-    """Replays a recorded response by name. No network, in CI or anywhere else."""
+    """Replays a recorded response by name. No network, in CI or anywhere else.
+
+    THE HASH IS CHECKED HERE AND NOT ONLY IN THE SUITE, and the distinction is the whole point
+    of this class. `tests/test_licence.py` hashes every committed body on every run, so a
+    hand-edited rate cannot reach main: that protects the REPOSITORY. It does nothing for a
+    checkout, where an interrupted write, a full disk or a half-finished sync leaves a body
+    truncated after CI has already passed.
+
+    Measured on a copy of the cassette directory with one body cut 155 bytes short: the last
+    rate came back as 1.14 instead of 1.1485, a 74 basis point error, served under
+    `"source": "ECB statistics."` with a coverage certificate reporting nothing missing. A
+    zero-byte body came back as an empty series with no error at all. Both are worse than a
+    crash, because a number that is merely wrong is a number somebody will act on.
+    """
 
     def __init__(self, directory: pathlib.Path | None = None) -> None:
         self._dir = directory or CASSETTES
-        self._index = {
-            entry["name"]: entry for entry in json.loads((self._dir / "index.json").read_text())
-        }
+        index = self._dir / "index.json"
+        if not index.exists():
+            # THE DEFAULT IS RIGHT FOR A CHECKOUT AND IMPOSSIBLE FROM A WHEEL, so the error says
+            # so rather than surfacing as a FileNotFoundError three frames down inside
+            # build_server. CASSETTES is `parents[2] / "data" / "cassettes"`, which is the
+            # repository root when this package is imported from src and is
+            # `<prefix>/lib/python3.x/data/cassettes` when it is imported from site-packages.
+            # The recordings are vendor bytes kept for a licence argument, not package data, so
+            # the wheel does not carry them and tests/test_licence.py holds that decision.
+            raise FileNotFoundError(
+                f"no cassette index at {index}. These recordings live in the repository rather "
+                f"than in the wheel, so an installed copy has to be given a directory: "
+                f"CassetteTransport(directory=...)"
+            )
+        self._index = {entry["name"]: entry for entry in json.loads(index.read_text())}
+        # Verified names, so replaying the 1.4 MB full history in a loop hashes it once. The
+        # cache is keyed on the name rather than on the bytes for the obvious reason: hashing
+        # the bytes to decide whether to hash the bytes saves nothing.
+        self._verified: set[str] = set()
 
     def names(self) -> list[str]:
         return sorted(self._index)
@@ -92,11 +138,36 @@ class CassetteTransport:
             raise KeyError(
                 f"no recording named {name!r}; recorded: {', '.join(sorted(self._index))}"
             ) from None
+        body = (self._dir / f"{name}.body").read_bytes()
+        if name not in self._verified:
+            self._check(name, entry, body)
+            self._verified.add(name)
         return RawResponse(
             status=int(entry["status"]),
             content_type=str(entry["content_type"]),
-            body=(self._dir / f"{name}.body").read_bytes(),
+            body=body,
         )
+
+    def _check(self, name: str, entry: dict[str, object], body: bytes) -> None:
+        """Length first, then the digest.
+
+        The length is not a redundant cheap version of the hash. It is what makes the failure
+        message useful: "1,479,269 bytes where 1,479,424 were recorded" tells a reader the file
+        was truncated, and a digest mismatch alone would send them looking for an edit.
+        """
+        recorded_bytes = int(entry["bytes"])  # type: ignore[call-overload]
+        if len(body) != recorded_bytes:
+            raise CorruptedRecording(
+                f"{name}.body holds {len(body):,} bytes and {recorded_bytes:,} were recorded. "
+                f"This is a local file, so the likely cause is an interrupted write or an "
+                f"unfinished sync rather than an edit"
+            )
+        digest = hashlib.sha256(body).hexdigest()
+        if digest != entry["sha256"]:
+            raise CorruptedRecording(
+                f"{name}.body is the right length and hashes to {digest[:16]}, where "
+                f"{str(entry['sha256'])[:16]} was recorded. The bytes have been changed"
+            )
 
 
 def _looks_like_sdmx_xml(body: bytes) -> bool:
