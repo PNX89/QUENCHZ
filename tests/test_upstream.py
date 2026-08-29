@@ -133,3 +133,42 @@ def test_a_two_hundred_carrying_something_else_entirely_is_refused(label: str, b
     assert reading.outcome is Outcome.WRONG_FORMAT, f"{label} was not refused"
     assert reading.observations == {}
     assert reading.detail
+
+
+@pytest.mark.parametrize("status", [500, 501, 503])
+def test_a_vendor_failure_is_not_reported_as_the_callers_mistake(status: int) -> None:
+    """Everything that was not 200, 400 or 404 used to fall through to REJECTED_PARAMETERS.
+
+    So the vendor's own documented 500, 501 and 503, quoted in `budget.py`, told a caller its
+    parameters were wrong when the vendor was down. Whoever is on call then reads the request
+    instead of the status page, which is the one place the answer is not.
+
+    The same CSV body under four statuses is what makes this legible: the outcome must come from
+    the status here, precisely because a 5xx body cannot be trusted to say anything.
+    """
+    body = b"KEY,TIME_PERIOD,OBS_VALUE\nEXR,2026-07-31,1.1485\n"
+    reading = read(RawResponse(status, "text/csv", body))
+    assert reading.outcome is Outcome.VENDOR_UNAVAILABLE
+    assert str(status) in reading.detail
+    assert reading.observations == {}, (
+        "a 5xx body was parsed for observations, which trusts a body the vendor sent while "
+        "telling us it was failing"
+    )
+
+
+def test_a_four_hundred_still_says_which_side_of_the_line_it_is_on() -> None:
+    """The 4xx branches must not have moved while the 5xx one was being added.
+
+    Deleting the dedicated 400 arm used to leave the suite green, because the fall-through
+    produced the same outcome with different text and only the outcome was asserted. The detail
+    is asserted here, so the branch is load-bearing rather than tidy.
+    """
+    rejected = read(RawResponse(400, "text/html", b"<html></html>"))
+    assert rejected.outcome is Outcome.REJECTED_PARAMETERS
+    assert rejected.detail == "the vendor rejected the parameters"
+
+    unexpected = read(RawResponse(406, "text/html", b"<html></html>"))
+    assert unexpected.outcome is Outcome.REJECTED_PARAMETERS
+    assert unexpected.detail == "unexpected status 406", (
+        "406 now reads like a rejected parameter, and this branch does not know which parameter"
+    )

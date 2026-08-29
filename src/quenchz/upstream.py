@@ -48,6 +48,13 @@ class Outcome(StrEnum):
     WRONG_FORMAT = "wrong_format"
     UNKNOWN_SERIES = "unknown_series"
     REJECTED_PARAMETERS = "rejected_parameters"
+    #: THE OUTCOME THAT WAS MISSING, and its absence had a cost. Every status that was not 200,
+    #: 400 or 404 fell through to REJECTED_PARAMETERS, so a caller was told its parameters were
+    #: wrong when the vendor was down. The vendor's own documented status table lists 500, 501
+    #: and 503, so this is not a hypothetical: it is a documented case classified as the
+    #: caller's fault, which sends whoever is on call to read the request instead of the status
+    #: page.
+    VENDOR_UNAVAILABLE = "vendor_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,7 +193,17 @@ def read(response: RawResponse) -> Reading:
         # The body here is HTML, not JSON, which is worth saying out loud because a client
         # written against the 404 shape will throw a decode error on this one.
         return Reading(Outcome.REJECTED_PARAMETERS, {}, empty, "the vendor rejected the parameters")
+    if response.status >= 500:
+        return Reading(
+            Outcome.VENDOR_UNAVAILABLE,
+            {},
+            empty,
+            f"the vendor answered {response.status}, which is its problem and not the request's",
+        )
     if response.status != 200:
+        # 304, 406 and anything else the vendor documents. Still the caller's side of the line,
+        # since a 4xx is a statement about the request, and named as unexpected rather than as
+        # "rejected parameters" because this branch does not know which parameter.
         return Reading(
             Outcome.REJECTED_PARAMETERS, {}, empty, f"unexpected status {response.status}"
         )
