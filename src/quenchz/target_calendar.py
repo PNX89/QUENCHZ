@@ -2,8 +2,10 @@
 
 Everything in this module was derived from the vendor's own series rather than from a
 document, and then checked against the vendor's documentation. The derivation is in
-`tests/test_target_calendar.py`: across 7,140 observations from 1999-01-04 to 2026-08-25,
-**every** absent weekday is explained by the six rules below and none is left over.
+`tests/test_target_calendar.py`: across 7,140 rows carrying 7,078 observations, from 1999-01-04
+to 2026-08-25, **every** absent weekday is explained by the six rules below and none is left
+over. The two numbers are different and this file is where the difference is explained, so
+calling 7,140 observations here, as it did, was wrong in the sentence introducing the point.
 
 Two facts here are not obvious and both cost a naive implementation real accuracy.
 
