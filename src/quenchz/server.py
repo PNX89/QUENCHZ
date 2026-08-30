@@ -162,7 +162,7 @@ def build_server(
         before this: a start of `0000-00-00` produced `ValueError: year 0 is out of range`, an
         unrecorded cassette name produced a `KeyError` that ENUMERATED EVERY RECORDING INTO THE
         LOG, and a window ending at 9999-12-31 produced `OverflowError`. All three arrived as
-        HTTP 200 with `isError: true` and the same six words.
+        HTTP 200 with `isError: true` and the text `Error executing tool rates.window`.
 
         What is quoted back is chosen rather than convenient. The caller's own dates are quoted,
         because it sent them. The list of recordings is not, because knowing which names exist
