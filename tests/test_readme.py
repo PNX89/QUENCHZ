@@ -18,9 +18,19 @@ import io
 import pathlib
 import re
 
+import pytest
+
 REPO = pathlib.Path(__file__).resolve().parents[1]
 README = (REPO / "README.md").read_text(encoding="utf-8")
 CASSETTES = REPO / "data" / "cassettes"
+
+# Fenced blocks come out before any bracket is looked at. The response body on the first
+# screenful is JSON, where `["2026-03-30", 1.1484]` is a pair of numbers to a reader and a
+# bracket span to a regular expression.
+FENCED = re.compile(r"```.*?```", re.DOTALL)
+
+# One level of nesting, because that is what a badge is: an image link inside a link.
+BRACKETED = re.compile(r"!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]")
 
 
 def test_the_readme_response_body_is_the_one_the_server_returns() -> None:
@@ -116,6 +126,85 @@ def test_the_readme_budget_numbers_are_the_ones_the_limiter_produces() -> None:
     assert "0 of 60" in README and "15 of 60" in README
 
 
+def test_the_readme_states_the_1990_count_the_certificate_really_produces() -> None:
+    """NUMBER. The figure the fourth absence exists for, recomputed rather than typed.
+
+    261 is stated three times in that paragraph and nothing recomputed any of them. It is the
+    weekday count of 1990, which is what `reconstruct` reports as expected when it is given no
+    lower bound, and it is the number that made BEFORE_THE_SERIES necessary in the first place.
+
+    Every integer in the paragraph is compared, rather than one being searched for across the
+    page: a document this long carries any three digit number somewhere.
+    """
+    from quenchz.coverage import reconstruct
+
+    weekdays_in_1990 = reconstruct(
+        datetime.date(1990, 1, 1),
+        datetime.date(1990, 12, 31),
+        set(),
+        datetime.datetime(2026, 8, 26, 12, 0, tzinfo=datetime.UTC),
+    ).expected_observations
+
+    paragraph = next(p for p in README.split("\n\n") if "window in 1990" in p)
+    figures = {int(n) for n in re.findall(r"\b\d+\b", paragraph)} - {1990}
+    assert figures == {weekdays_in_1990}, (
+        f"the 1990 paragraph states {sorted(figures)} where the certificate produces "
+        f"{weekdays_in_1990}"
+    )
+
+
+def test_the_readme_states_the_number_of_checks_the_typescript_proof_declares() -> None:
+    """NUMBER. "Sixteen checks" was typed here and nothing in either language could see it move.
+
+    `prove.ts` counts its checks as it goes, so deleting one printed "15 of 15 checks passed"
+    and exited 0: a smaller proof reporting success, with the page still claiming the old
+    figure. It declares the total now and fails when its own count disagrees. This reads that
+    declaration and requires the page to state the same number.
+
+    Searched inside the section that makes the claim, and required to be the only such claim
+    there, because a page this long contains any two digit number somewhere.
+    """
+    prove = (REPO / "clients" / "typescript" / "src" / "prove.ts").read_text(encoding="utf-8")
+    declared = re.search(r"const DECLARED_CHECKS = (\d+);", prove)
+    assert declared, "prove.ts no longer declares how many checks it makes"
+
+    section = re.search(
+        r"^## Proving it from outside Python\n(.*?)(?=^## )", README, re.MULTILINE | re.DOTALL
+    )
+    assert section, "the page no longer has the section that states this"
+    assert re.findall(r"\b(\d+) checks\b", section.group(1)) == [declared.group(1)], (
+        f"the page does not state the {declared.group(1)} checks prove.ts declares"
+    )
+
+
+def test_the_readme_counts_the_publication_times_the_way_its_own_table_does() -> None:
+    """NUMBER. Three times, and how many of them a client finds in the payload.
+
+    The sentence used to say "only two of them are visible to a client", which the table cannot
+    settle either way: one time is in the payload and the other two are in the vendor's prose,
+    so what "visible" covers was the reader's guess. It states what the table states now, and
+    both figures are counted out of the table rather than read from the sentence.
+    """
+    section = re.search(
+        r"^## What the vendor writes down and the payload does not\n(.*?)(?=^## )",
+        README,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert section, "the page no longer has the section that states this"
+    rows = [
+        line for line in section.group(1).splitlines() if line.startswith("| ") and "CET" in line
+    ]
+    in_the_payload = [line for line in rows if "in the payload" in line]
+
+    words = {1: "one", 2: "two", 3: "three", 4: "four"}
+    assert rows and set(words) >= {len(rows), len(in_the_payload)}, (
+        f"{len(rows)} times are tabulated and this test knows no word for that many"
+    )
+    sentence = section.group(1).split("\n\n")[0]
+    assert f"{words[len(rows)]} times" in sentence, sentence
+    assert f"only {words[len(in_the_payload)]} of them" in sentence, sentence
+
+
 def test_every_command_the_readme_shows_is_one_this_repository_runs() -> None:
     """COMMAND. A command a reader is invited to run must be one that exists."""
     workflow = (REPO / ".github" / "workflows" / "ci.yml").read_text("utf-8")
@@ -132,6 +221,11 @@ def test_every_command_the_readme_shows_is_one_this_repository_runs() -> None:
     modules = {"uv run python -m quenchz.interop_server"}
 
     def normalise(command: str) -> str:
+        # THIS COMPARES THE COMMAND AND NOT ITS ARGUMENTS, which is the whole of what it can do:
+        # a port and a path are a reader's choice and cannot be matched against a fixed list.
+        # It is not a check on what the arguments say, and reading it as one is how the page
+        # came to print a `--tokens-file` the server refuses. The arguments are run for real by
+        # `test_the_server_command_the_readme_prints_actually_starts_the_server` below.
         return re.sub(r"\s+", " ", command.split("--port")[0].split("--tokens-file")[0]).strip()
 
     known = {normalise(c) for c in gates | from_ci | scripts | modules}
@@ -143,6 +237,56 @@ def test_every_command_the_readme_shows_is_one_this_repository_runs() -> None:
         )
 
 
+def test_the_server_command_the_readme_prints_actually_starts_the_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """COMMAND. The printed line, run with its own arguments and only the serving replaced.
+
+    The page told a reader to start the server with `--tokens-file tokens.json`, and
+    `interop_server.main` refuses any tokens path that resolves inside the repository, because a
+    bearer token in the working tree is one `git add -A` away from being published. So the one
+    command on the page that starts anything exited 1 and started nothing. The guard is right
+    and the instruction was wrong.
+
+    The test above could not see it: `normalise` cuts a shown command at `--tokens-file`, so the
+    half being compared was the half that works. This runs the whole line from the checkout
+    root, which is where a reader following the page is standing.
+
+    `uvicorn.run` is replaced rather than a port being bound. What is being checked happens
+    strictly before the server exists, and binding a port would make the suite depend on what
+    else is running on the machine.
+    """
+    import shlex
+
+    import uvicorn
+
+    from quenchz.interop_server import main
+
+    shown = re.findall(r"^uv run python -m quenchz\.interop_server .+$", README, re.MULTILINE)
+    assert len(shown) == 1, f"expected one server command on the page and found {len(shown)}"
+
+    words = shlex.split(shown[0])
+    argv = words[words.index("quenchz.interop_server") + 1 :]
+    tokens = pathlib.Path(dict(zip(argv[::2], argv[1::2], strict=True))["--tokens-file"])
+
+    monkeypatch.chdir(REPO)
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: None)
+    tokens.unlink(missing_ok=True)
+    try:
+        try:
+            code = main(argv)
+        except SystemExit as refused:
+            raise AssertionError(
+                f"the command the README prints does not run: {refused}"
+            ) from refused
+        assert code == 0
+        assert tokens.exists(), "the command returned 0 and wrote no tokens file"
+    finally:
+        # Short-lived and minted by an issuer that dies with this process, and still not
+        # something to leave lying about.
+        tokens.unlink(missing_ok=True)
+
+
 def test_every_path_and_link_in_the_readme_resolves() -> None:
     """REFERENCE. A path pointing at nothing is a rename somebody did not finish."""
     for target in re.findall(r"\]\(([^)]+)\)", README):
@@ -150,6 +294,44 @@ def test_every_path_and_link_in_the_readme_resolves() -> None:
             continue
         assert not target.startswith("http://"), f"insecure link: {target}"
         assert (REPO / target.split("#")[0]).exists(), target
+
+
+def test_every_bracketed_reference_in_the_readme_is_actually_a_link() -> None:
+    """REFERENCE. A shortcut reference with no definition renders as brackets, not as a link.
+
+    Four of these shipped, and one of them was the loudest call to action on the page: "if you
+    only open one file, open [src/quenchz/coverage.py]", written as a shortcut reference with no
+    definition anywhere in the file. Every GFM parser renders that as literal square brackets,
+    so every link to a sibling repository worked and not one line of this repository's own
+    source did.
+
+    Two tests looked like they covered it and neither could. One asserts the headline path
+    exists on disk, the other resolves inline `](...)` targets. Between them they proved the
+    path was real and never that it was a link.
+    """
+    prose = FENCED.sub("", README)
+    defined = set(re.findall(r"^\[([^\]]+)\]:", prose, re.MULTILINE))
+
+    literal = []
+    for match in BRACKETED.finditer(prose):
+        rest = prose[match.end() :]
+        # A definition sits at the start of its own line. THE COLON IS NOT ENOUGH ON ITS OWN,
+        # which is how the first version of this test passed on the very line it was written
+        # for: "open [`src/quenchz/coverage.py`]: it is the certificate below" is a colon in
+        # prose, and skipping every `]:` skipped the defect.
+        starts_a_line = match.start() == 0 or prose[match.start() - 1] == "\n"
+        if rest.startswith("(") or (rest.startswith(":") and starts_a_line):
+            continue
+        # `[text][label]` names its label next. `[label]` and `[label][]` are the label itself.
+        collated = re.match(r"\[([^\[\]]*)\]", rest)
+        label = collated.group(1) if collated and collated.group(1) else match.group().strip("![]")
+        if label not in defined:
+            literal.append(match.group())
+
+    assert literal == [], (
+        f"these render as literal square brackets rather than as links: {literal}. A reference "
+        f"needs either an inline (target) or a matching [label]: definition."
+    )
 
 
 def test_the_readme_names_a_headline_file_that_exists() -> None:
@@ -166,13 +348,62 @@ def test_the_attribution_the_licence_requires_is_on_the_page() -> None:
     assert "Source: ECB statistics." in README
 
 
+# Phrases nobody writes except to concede something, each anchored on word boundaries so that
+# none of them can be satisfied from inside a longer word. "never" and a bare "no" are left out
+# on purpose: "it never stops" and "no matter the payload" are both boasts.
+ADMISSIONS = (
+    r"\bdoes not\b",
+    r"\bdo not\b",
+    r"\bcannot\b",
+    r"\bno claim is made\b",
+    r"\bnothing here\b",
+    r"\bis not the same as\b",
+)
+
+
+def _admits_something(passage: str) -> bool:
+    """Whether a passage concedes a limit, rather than merely containing the letters of one.
+
+    No word list can show that a page is honest. This shows only that it says something
+    limiting, which is the part a check can carry, and it is written so that it can go red.
+    """
+    return any(re.search(phrase, passage, re.IGNORECASE) for phrase in ADMISSIONS)
+
+
+def test_the_admission_check_cannot_be_satisfied_by_prose_that_admits_nothing() -> None:
+    """The guard below, pointed at a page with no limit anywhere on it.
+
+    The first version tested `any(word in quarter.lower() for word in ("not", "no ", "does not",
+    "never", "cannot"))`. Those are bare substrings, so "not" matched inside "Annotations",
+    "another" and the certificate's own `not_yet_published` field, which the page prints in its
+    own code block. It could not have failed on any plausible README, which makes it decoration
+    in the one file this repository holds up as proof that its claims are checked.
+    """
+    hype = (
+        "QUENCHZ is a production grade MCP server. It is fast, complete and battle tested. "
+        "Annotations everywhere, no matter the payload. It handles everything another agent "
+        "throws at it, and it never stops."
+    )
+    assert not _admits_something(hype), (
+        "a paragraph that concedes nothing at all passes this check, so it checks nothing"
+    )
+    assert _admits_something(
+        "The budget is self-imposed. It does not correspond to any limit the vendor publishes."
+    ), "a real concession fails this check, so it would refuse an honest page"
+
+
 def test_the_page_states_a_limitation_before_it_stops_being_read() -> None:
     """N31. A limitation that lives at the bottom is a limitation nobody reaches."""
-    quarter = README[: len(README) // 4]
-    admissions = ("not", "no ", "does not", "never", "cannot")
-    assert any(word in quarter.lower() for word in admissions), (
+    assert _admits_something(README[: len(README) // 4]), (
         "nothing in the first quarter of the page admits a limit"
     )
+
+    # The structural half, which no vocabulary can fake: the concessions are collected under
+    # their own heading rather than being one clause somebody can delete.
+    section = re.search(r"^## Limitations\n(.*?)(?=^## )", README, re.MULTILINE | re.DOTALL)
+    assert section, "the page has no Limitations section of its own"
+    bullets = re.findall(r"^- ", section.group(1), re.MULTILINE)
+    assert len(bullets) >= 3, f"the Limitations section states {len(bullets)} limits"
 
 
 def test_the_page_does_not_claim_what_this_repository_must_never_claim() -> None:

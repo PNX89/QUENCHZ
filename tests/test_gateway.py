@@ -16,12 +16,16 @@ import pytest
 from quenchz.budget import FairBudget, ManualClock
 from quenchz.gateway import OVER_BUDGET, Caller, Gateway, OverBudget
 from quenchz.tools import Tool, ToolRefused, Toolset
-from quenchz.upstream import CassetteTransport
+from quenchz.upstream import CassetteTransport, Outcome, RawResponse, Transport, read
 
 WHEN = datetime.datetime(2026, 8, 26, 12, 0, tzinfo=datetime.UTC)
 
 
-def _gateway(clock: ManualClock, callers: tuple[str, ...] = ("greedy", "quiet")) -> Gateway:
+def _gateway(
+    clock: ManualClock,
+    callers: tuple[str, ...] = ("greedy", "quiet"),
+    transport: Transport | None = None,
+) -> Gateway:
     return Gateway(
         Toolset(
             [
@@ -30,8 +34,53 @@ def _gateway(clock: ManualClock, callers: tuple[str, ...] = ("greedy", "quiet"))
             ]
         ),
         FairBudget(capacity=60, refill_per_second=60, callers=callers, clock=clock),
-        CassetteTransport(),
+        transport or CassetteTransport(),
     )
+
+
+class _OneResponse:
+    """A transport that hands back one chosen response, whatever it is asked for.
+
+    `Transport` is a Protocol, so this is the whole of it. The committed corpus carries a 200
+    with rows, an empty 200, a 200 in the wrong format and a 404, and nothing that is a 400 or a
+    5xx. That is exactly why two arms of the gateway's match had no behavioural test.
+    """
+
+    def __init__(self, response: RawResponse) -> None:
+        self._response = response
+
+    def fetch(self, name: str) -> RawResponse:
+        return self._response
+
+
+# One response per Outcome, each chosen so that `upstream.read` classifies it as that member,
+# paired with what the gateway then owes a caller: None to answer it, or the words its refusal
+# has to carry. Written out here rather than read from the enum, and pinned by name and size
+# below, because a parametrisation taken straight from the code under test covers one case
+# fewer the moment a member is deleted, and reads exactly like a pass.
+RESPONSES: dict[Outcome, tuple[RawResponse, str | None]] = {
+    Outcome.OBSERVATIONS: (
+        RawResponse(200, "text/csv", b"TIME_PERIOD,OBS_VALUE\n2026-07-01,1.1646\n"),
+        None,
+    ),
+    Outcome.EMPTY_WINDOW: (RawResponse(200, "text/csv", b""), None),
+    Outcome.WRONG_FORMAT: (
+        RawResponse(200, "application/vnd.sdmx.genericdata+xml", b"<?xml version='1.0'?><d/>"),
+        "did not answer in the format asked for",
+    ),
+    Outcome.UNKNOWN_SERIES: (
+        RawResponse(404, "application/problem+json", b'{"detail": "no series named that"}'),
+        "has no such series",
+    ),
+    Outcome.REJECTED_PARAMETERS: (
+        RawResponse(400, "text/html", b"<html>the parameters were rejected</html>"),
+        "rejected the request",
+    ),
+    Outcome.VENDOR_UNAVAILABLE: (
+        RawResponse(503, "text/html", b"<html>service unavailable</html>"),
+        "could not answer",
+    ),
+}
 
 
 # Far above any budget this file configures. The cap is not decoration: if refused calls ever
@@ -188,7 +237,7 @@ def test_every_outcome_is_either_answered_or_raised_and_none_falls_through() -> 
 
 
 def test_a_window_before_the_series_is_not_reported_as_gaps_through_the_gateway() -> None:
-    """The first observed date is in hand here, so it must reach the certificate."""
+    """The series start is in hand here, so it must reach the certificate."""
     gateway = _gateway(ManualClock())
     answer = gateway.rates_window(
         "usd-eur-daily-full-history", datetime.date(1990, 1, 1), datetime.date(1990, 12, 31), WHEN
@@ -197,6 +246,43 @@ def test_a_window_before_the_series_is_not_reported_as_gaps_through_the_gateway(
     assert coverage["expected_observations"] == 0
     assert coverage["absent"]["no_such_observation"] == 0
     assert coverage["absent"]["before_the_series"] == 365
+
+
+def test_a_window_opening_before_the_recording_is_not_called_before_the_series() -> None:
+    """The series start is a fact about the SERIES, never about the slice that came back.
+
+    This is the case the test above cannot express. It asks the full history, the one recording
+    whose first row happens to be the first row of the series, so taking the start from the
+    response agrees with taking it from the calendar and the two are indistinguishable.
+
+    `usd-eur-daily-one-month` carries July 2026 and nothing else. Asking it for June as well
+    used to read the series as beginning on 1 July, so every rate the ECB really published in
+    June was filed under `before_the_series`, whose documented meaning is that nothing was ever
+    due, and the certificate came back complete on a two month window a third of which arrived.
+    """
+    gateway = _gateway(ManualClock())
+    answer = gateway.rates_window(
+        "usd-eur-daily-one-month", datetime.date(2026, 6, 1), datetime.date(2026, 7, 31), WHEN
+    )
+    coverage = answer["coverage"]
+
+    # Counted out of the vendor's own full history rather than typed here. The ECB published on
+    # every TARGET open day that month, so this is both what was owed and what is missing from
+    # the narrow recording, and every one of them has to be reported as missing.
+    published_in_june = [
+        day
+        for day in read(CassetteTransport().fetch("usd-eur-daily-full-history")).observations
+        if datetime.date(2026, 6, 1) <= day <= datetime.date(2026, 6, 30)
+    ]
+    assert published_in_june, "the full history no longer covers June 2026, so this proves nothing"
+
+    assert coverage["absent"]["before_the_series"] == 0, (
+        "days the vendor published rates on are being certified as days nothing was ever due"
+    )
+    assert coverage["absent"]["no_such_observation"] == len(published_in_june)
+    assert coverage["delivered_observations"] < coverage["expected_observations"], (
+        "a window missing a month of published rates is being certified as complete"
+    )
 
 
 def test_an_outcome_this_match_has_not_been_taught_raises(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -236,6 +322,13 @@ def test_every_outcome_is_named_in_the_gateway_match() -> None:
 
     Read from the source, so a member added without an arm is caught here as well as by mypy,
     and a reader of the tests can see the rule without running the type checker.
+
+    THIS IS NOT THE SECOND DEFENCE IT LOOKS LIKE. A substring search cannot tell an arm that
+    raises from an arm whose body is `pass`, and neither can `assert_never`, which sees a named
+    arm either way. Emptying the REJECTED_PARAMETERS or VENDOR_UNAVAILABLE arm left pytest,
+    mypy and ruff all green, and served a vendor outage to a caller as five genuine gaps under
+    the ECB's attribution. The behavioural half is
+    `test_the_gateway_answers_or_refuses_every_outcome_by_name`.
     """
     import inspect
 
@@ -247,3 +340,43 @@ def test_every_outcome_is_named_in_the_gateway_match() -> None:
         f"these outcomes have no arm in the gateway match: {unnamed}. Falling through means "
         f"answering a caller about a response nobody classified"
     )
+
+
+def test_every_outcome_has_a_response_here_and_the_set_is_the_one_upstream_declares() -> None:
+    """Pinned by name AND by size, so the parametrisation below cannot quietly shrink.
+
+    A case list read out of `Outcome` covers one fewer outcome the day a member is deleted and
+    stays green, which is indistinguishable from a pass. Naming the members and counting them
+    turns that into a failure that says what happened.
+    """
+    assert set(RESPONSES) == set(Outcome)
+    assert len(RESPONSES) == 6, (
+        f"{len(RESPONSES)} outcomes are covered here; an Outcome was added or removed and this "
+        f"file has not been taught what the gateway owes a caller for it"
+    )
+
+
+@pytest.mark.parametrize("outcome", sorted(RESPONSES, key=str))
+def test_the_gateway_answers_or_refuses_every_outcome_by_name(outcome: Outcome) -> None:
+    """Every outcome driven through the real gateway, including the two no recording carries.
+
+    `test_every_outcome_is_either_answered_or_raised_and_none_falls_through` enumerates the
+    committed cassettes, and none of them is a 400 or a 5xx, so REJECTED_PARAMETERS and
+    VENDOR_UNAVAILABLE never reached the gateway at all. Replacing either arm's body with
+    `pass` left pytest, mypy and ruff green while a vendor outage came back as five genuine
+    gaps filed under `no_such_observation`, whose documented meaning is that it was due, it is
+    late and somebody should know, carried under "Source: ECB statistics.".
+    """
+    response, refusal = RESPONSES[outcome]
+    assert read(response).outcome is outcome, (
+        f"this response is no longer read as {outcome}, so this case is not the one it names"
+    )
+
+    gateway = _gateway(ManualClock(), transport=_OneResponse(response))
+    window = (datetime.date(2026, 7, 1), datetime.date(2026, 7, 31))
+    if refusal is None:
+        answer = gateway.rates_window("whatever", *window, WHEN)
+        assert answer["coverage"]["source"] == "ECB statistics."
+    else:
+        with pytest.raises(ValueError, match=refusal):
+            gateway.rates_window("whatever", *window, WHEN)

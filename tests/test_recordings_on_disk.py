@@ -125,22 +125,46 @@ def test_the_length_and_the_digest_are_reported_differently(copied: pathlib.Path
     assert "hashes to" in str(edited.value)
 
 
-def test_a_body_is_hashed_once_however_often_it_is_replayed(copied: pathlib.Path) -> None:
+def test_a_body_is_hashed_once_and_a_later_edit_never_reaches_a_caller(
+    copied: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The full history body is 1.4 MB and the gateway replays it per call.
 
-    Recording which names have been verified is what keeps this check from being the reason
-    somebody turns it off. Asserted by corrupting the file AFTER a successful fetch: the second
-    fetch is served from the already-verified name, which is the behaviour being claimed.
+    Verifying once is what keeps this check from being the reason somebody turns it off, and
+    WHAT IS REMEMBERED IS THE BYTES RATHER THAN THE NAME. Remembering the name looked like the
+    same optimisation and was not: the file was still re-read on every call and only the digest
+    was skipped, so a body that went bad after the first fetch was served for the life of the
+    process, under `"source": "ECB statistics."`, with a certificate reporting nothing missing.
+    That is the transcript at the top of this file, restored by the cache meant to be free.
+
+    The old test asserted the hole as a feature. It corrupted the file after a successful fetch
+    and required the corrupted bytes to come back.
     """
+    hashed: list[str] = []
+    checked = CassetteTransport._check
+
+    def counting(
+        transport: CassetteTransport, name: str, entry: dict[str, object], body: bytes
+    ) -> None:
+        hashed.append(name)
+        checked(transport, name, entry, body)
+
+    monkeypatch.setattr(CassetteTransport, "_check", counting)
+
     transport = CassetteTransport(directory=copied)
     first = transport.fetch(NAME)
     (copied / f"{NAME}.body").write_bytes(b"")
     second = transport.fetch(NAME)
-    assert second.body == b"", (
-        "the second fetch re-read and re-verified the file, so the hash is being computed on "
-        "every replay and this cache does not exist"
+
+    assert hashed == [NAME], (
+        f"the body was hashed {len(hashed)} times across two replays, so this cache does not "
+        f"exist and the 1.4 MB full history is digested on every call"
     )
     assert len(first.body) > 0
+    assert second.body == first.body, (
+        "a body edited on disk after the first fetch reached a caller, which is the failure "
+        "this class exists to prevent happening inside a running process"
+    )
 
 
 def test_every_committed_recording_passes_its_own_check() -> None:
