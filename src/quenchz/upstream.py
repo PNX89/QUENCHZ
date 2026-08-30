@@ -61,6 +61,14 @@ class Outcome(StrEnum):
     #: caller's fault, which sends whoever is on call to read the request instead of the status
     #: page.
     VENDOR_UNAVAILABLE = "vendor_unavailable"
+    #: 304 fell through to REJECTED_PARAMETERS as well, on a comment that argued 304 was "the
+    #: caller's side of the line" using a reason that only covers 4xx. A 304 answers a
+    #: conditional request, and this client sends none anywhere in this tree: no
+    #: `If-None-Match`, no `If-Modified-Since`. So this is undetected rather than reachable
+    #: today, and named here rather than left inside REJECTED_PARAMETERS so that the day it is
+    #: reached, whether from a future conditional request or a misbehaving proxy, it is not
+    #: reported to a caller as its own mistake.
+    NOT_MODIFIED = "not_modified"
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,9 +219,20 @@ def read(response: RawResponse) -> Reading:
             empty,
             f"the vendor answered {response.status}, which is its problem and not the request's",
         )
+    if response.status == 304:
+        # Documented by the vendor and structurally unreachable by this client: a 304 answers a
+        # conditional request, and nothing in this tree sends one. Named on its own rather than
+        # folded into the arm below, because that arm's justification is "a 4xx is a statement
+        # about the request", which is true of 406 and false of a 3xx.
+        return Reading(
+            Outcome.NOT_MODIFIED,
+            {},
+            empty,
+            "the vendor reported no change to a request that was never conditional",
+        )
     if response.status != 200:
-        # 304, 406 and anything else the vendor documents. Still the caller's side of the line,
-        # since a 4xx is a statement about the request, and named as unexpected rather than as
+        # 406 and anything else the vendor documents. Still the caller's side of the line, since
+        # a 4xx is a statement about the request, and named as unexpected rather than as
         # "rejected parameters" because this branch does not know which parameter.
         return Reading(
             Outcome.REJECTED_PARAMETERS, {}, empty, f"unexpected status {response.status}"

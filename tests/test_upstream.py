@@ -172,3 +172,15 @@ def test_a_four_hundred_still_says_which_side_of_the_line_it_is_on() -> None:
     assert unexpected.detail == "unexpected status 406", (
         "406 now reads like a rejected parameter, and this branch does not know which parameter"
     )
+
+
+def test_a_not_modified_status_is_not_reported_as_the_callers_mistake_either() -> None:
+    """304 shared the 406 arm, on a comment that justified the pairing with a reason that only
+    covers 4xx: "a 4xx is a statement about the request". A 304 is a 3xx, and it answers a
+    conditional request this client never makes, so it is not a statement about the request at
+    all. It gets an outcome of its own rather than REJECTED_PARAMETERS.
+    """
+    reading = read(RawResponse(304, "text/html", b""))
+    assert reading.outcome is Outcome.NOT_MODIFIED
+    assert reading.observations == {}
+    assert "never conditional" in reading.detail
