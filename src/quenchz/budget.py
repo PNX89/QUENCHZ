@@ -114,8 +114,14 @@ class NaiveSharedBucket:
         self._last = self.clock.now
 
     def _refill(self) -> None:
-        elapsed = self.clock.now - self._last
-        self._last = self.clock.now
+        # ONE READ, NOT TWO. `elapsed` and `_last` used to come from separate calls to
+        # `self.clock.now`, so whatever the clock advanced by between the two reads was charged
+        # to nobody: `_last` moved past it while `elapsed` never saw it. `ManualClock` cannot
+        # show this, since two reads with nothing telling it to advance return the same value,
+        # which is exactly why it survived every test in this file.
+        now = self.clock.now
+        elapsed = now - self._last
+        self._last = now
         self._tokens = min(self.capacity, self._tokens + elapsed * self.refill_per_second)
 
     def request(self, caller: str) -> Admission:
@@ -161,8 +167,12 @@ class FairBudget:
         return self.refill_per_second * self.reserve_fraction / len(self.callers)
 
     def _refill(self) -> None:
-        elapsed = self.clock.now - self._last
-        self._last = self.clock.now
+        # ONE READ, NOT TWO. See `NaiveSharedBucket._refill` for the shape of the bug this
+        # avoids: reading the clock a second time only to set `_last` discards whatever passed
+        # between the two reads, silently and for ever.
+        now = self.clock.now
+        elapsed = now - self._last
+        self._last = now
         if elapsed <= 0:
             return
         for caller in self._reserve:

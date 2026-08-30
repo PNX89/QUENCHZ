@@ -166,6 +166,57 @@ def test_a_reserve_refills_at_a_rate_rather_than_all_at_once() -> None:
     )
 
 
+class _CountingClock:
+    """Wraps a real clock and counts how many times `.now` is read.
+
+    Structurally a `Clock`, which only ever asks for `.now`, so wrapping `ManualClock` rather
+    than inventing a new one keeps every number this file already knows recognisable: nothing
+    about what a budget computes changes here, only how many times it asks the clock for the
+    time.
+    """
+
+    def __init__(self, inner: ManualClock) -> None:
+        self._inner = inner
+        self.reads = 0
+
+    @property
+    def now(self) -> float:
+        self.reads += 1
+        return self._inner.now
+
+
+def test_a_fair_budgets_refill_reads_the_clock_once_not_twice() -> None:
+    """`_refill` used to compute `elapsed` from one read of the clock and then set `_last` from
+    a SECOND, later read, so whatever the clock advanced by between the two reads was charged to
+    nobody: `_last` moved past it while `elapsed` never saw it.
+
+    `ManualClock` cannot show the lost TIME, because two reads with nothing telling it to
+    advance return the same value, which is exactly why every other test in this file passed
+    regardless. Counting READS instead shows the mechanism directly, with no dependence on how
+    large a real clock's own tick happens to be: one call to `request` has no reason to consult
+    the clock more than once, and `__post_init__`'s own read is excluded, since that one is not
+    inside `_refill`.
+    """
+    clock = _CountingClock(ManualClock())
+    budget = FairBudget(capacity=60, refill_per_second=60, callers=("a",), clock=clock)
+
+    clock.reads = 0
+    budget.request("a")
+    assert clock.reads == 1, f"one request read the clock {clock.reads} times, not once"
+
+
+def test_the_naive_buckets_refill_reads_the_clock_once_not_twice() -> None:
+    """The same defect, at the same two lines, in the bucket kept only for the comparison it
+    enables. See `test_a_fair_budgets_refill_reads_the_clock_once_not_twice` for the mechanism.
+    """
+    clock = _CountingClock(ManualClock())
+    bucket = NaiveSharedBucket(capacity=60, refill_per_second=60, clock=clock)
+
+    clock.reads = 0
+    bucket.request("a")
+    assert clock.reads == 1, f"one request read the clock {clock.reads} times, not once"
+
+
 def test_an_idle_caller_cannot_bank_capacity_beyond_its_reserve() -> None:
     """The cap on the refill, which no test held.
 
@@ -207,8 +258,8 @@ def test_a_server_built_with_no_clock_recovers_capacity_as_time_passes() -> None
     that advances the clock itself never notices that nothing else does.
 
     Real time is waited on here rather than simulated, because simulating it is exactly what hid
-    this. The wait is small: the reserve refills at 30 per second per caller, so a tenth of a
-    second buys three admissions and the test is not measuring the sleep.
+    this. The wait is small: with one caller the reserve and the spare both refill at 30 per
+    second, so a tenth of a second buys six admissions and the test is not measuring the sleep.
     """
     budget = FairBudget(capacity=60, refill_per_second=60, callers=("alpha",), clock=WallClock())
 
