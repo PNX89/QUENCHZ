@@ -7,7 +7,7 @@ be useful is usually to disagree with something it claims.
 
 ```bash
 git clone https://github.com/PNX89/QUENCHZ.git && cd QUENCHZ
-uv sync --all-extras --dev
+uv sync --dev
 uv run python examples/two_callers.py
 ```
 
@@ -30,7 +30,7 @@ npm test
 ```
 
 Run every one of them. Running only the test suite is the most common way to be surprised by a
-red badge: formatting and typing are gates here, not suggestions.
+red badge: formatting, linting and typing are gates here, not suggestions.
 
 ## And the jobs that gate the pull request
 
