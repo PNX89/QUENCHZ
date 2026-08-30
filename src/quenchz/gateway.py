@@ -100,6 +100,12 @@ class Gateway:
                 # to know whether to read the request or the vendor's status page, and this
                 # branch is the only place that distinction is still available.
                 raise ValueError(f"the vendor could not answer: {reading.detail}")
+            case Outcome.NOT_MODIFIED:
+                # Reachable by no request this client makes today: a 304 answers a conditional
+                # GET, and this client sends none. Named on its own rather than reported as a
+                # rejected request, because "the vendor rejected the request" would be false of
+                # it the one day it is reached.
+                raise ValueError(f"the vendor did not answer what was asked: {reading.detail}")
             case unhandled:
                 # assert_never RATHER THAN A CATCH-ALL, and the difference is when it fires. The
                 # previous form raised at run time and gave mypy a total match, so adding
