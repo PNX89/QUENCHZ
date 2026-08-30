@@ -49,13 +49,12 @@ class Absence(StrEnum):
     Four named causes. A fifth this module has not thought of would be counted under
     NO_SUCH_OBSERVATION, and the README says so rather than claiming the list is complete.
 
-    BEFORE_THE_SERIES was the third of the four and it was added late, after a review asked for
-    a window in 1990. The euro did not exist in 1990, so nothing was ever due, and the
-    certificate answered `expected_observations: 261` with all 261 filed under
-    NO_SUCH_OBSERVATION, whose documented meaning is that somebody should know. It is the worst
-    available answer: a confident report of 261 missing rates on days when none was owed. It is
-    also reachable straight from a tool argument, since `rates.window` parses a caller's dates
-    with no window validation.
+    BEFORE_THE_SERIES was added late, after a review asked for a window in 1990. The euro did not
+    exist in 1990, so nothing was ever due, and the certificate answered `expected_observations:
+    261` with all 261 filed under NO_SUCH_OBSERVATION, whose documented meaning is that somebody
+    should know. It is the worst available answer: a confident report of 261 missing rates on
+    days when none was owed. It is also reachable straight from a tool argument, since
+    `rates.window` parses a caller's dates with no window validation.
 
     "The market was shut" and "this series had not started" are different answers, so this is a
     member of its own rather than being folded into TARGET_CLOSED.
