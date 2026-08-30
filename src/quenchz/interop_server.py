@@ -17,7 +17,7 @@ THE TOKENS ARE WRITTEN TO A FILE GIVEN ON THE COMMAND LINE AND NEVER TO THE REPO
 are minted by an issuer whose key exists only in this process's memory, they expire in minutes,
 and they are meaningless the moment it exits.
 
-    uv run python -m quenchz.interop_server --port 8931 --tokens-file /tmp/tokens.json
+    uv run python -m quenchz.interop_server --port 8931 --tokens-file /tmp/quenchz-tokens.json
 
 Source: ECB statistics.
 """

@@ -12,8 +12,9 @@ open and proved from outside the Python tree.**
 
 Serving MCP tools to callers you did not write. The four are **audience**, **reach**, **budget**
 and **coverage**, and each is falsifiable by a test a reviewer can watch fail. If you only open
-one file, open [`src/quenchz/coverage.py`]: it is the certificate below, and the reason twelve
-days asked for and eight delivered is a complete answer rather than a third of one.
+one file, open [`src/quenchz/coverage.py`](src/quenchz/coverage.py): it is the certificate
+below, and the reason twelve days asked for and eight delivered is a complete answer rather
+than a third of one.
 
 ```json
 {
@@ -52,7 +53,8 @@ days asked for and eight delivered is a complete answer rather than a third of o
 Twelve calendar days were asked for and eight came back, and **the response is complete**. Good
 Friday, Easter Monday and the weekend are closures rather than gaps, and the vendor's payload
 says nothing whatever about any of them. Telling the difference needs the publication calendar
-and the wall clock, and that is what the `coverage` block is: [`src/quenchz/coverage.py`].
+and the wall clock, and that is what the `coverage` block is:
+[`src/quenchz/coverage.py`](src/quenchz/coverage.py).
 
 It does not model everything. It reconstructs three named causes of absence and a fourth for
 dates before the series existed, and a fifth nobody has thought of would be counted as a genuine
@@ -117,7 +119,7 @@ uv run pytest
 The server, with an in-process issuer that mints its own tokens into a file:
 
 ```
-uv run python -m quenchz.interop_server --port 8931 --tokens-file tokens.json
+uv run python -m quenchz.interop_server --port 8931 --tokens-file /tmp/quenchz-tokens.json
 ```
 
 The signing key is generated in memory and never touches disk. Every hostname uses the reserved
@@ -145,12 +147,12 @@ watch which ones moved its own admitted rate.
 
 ## Proving it from outside Python
 
-[`clients/typescript/src/prove.ts`] drives the running server with the official MCP TypeScript
-SDK, in its own CI job. It shares no code with the thing it tests, which matters: the Python
-suite and the Python server can agree with each other about something that is not true of the
-protocol.
+[`clients/typescript/src/prove.ts`](clients/typescript/src/prove.ts) drives the running server
+with the official MCP TypeScript SDK, in its own CI job. It shares no code with the thing it
+tests, which matters: the Python suite and the Python server can agree with each other about
+something that is not true of the protocol.
 
-Sixteen checks. A token for this resource is admitted with 200; one for another resource, for two
+16 checks. A token for this resource is admitted with 200; one for another resource, for two
 resources, or for none is refused with 401 and a Bearer challenge. An ungranted tool and a
 nonexistent one refuse with identical bytes. The bursting caller stops where the arithmetic says
 it should and the quiet one still gets exactly its reserve.
@@ -162,7 +164,7 @@ would have satisfied every audience check on the page. It reads the status now.
 
 ## What the vendor writes down and the payload does not
 
-There are three times here and only two of them are visible to a client.
+There are three times here and the payload carries only one of them.
 
 | time | what it is | where it lives |
 |---|---|---|
@@ -263,7 +265,7 @@ MIT. See [LICENSE](LICENSE).
 
 The data is reused under the [ESCB policy on the reuse of statistics][policy], which permits it
 free of charge on three conditions: the source is quoted, the statistics and metadata are not
-modified, and no third-party data. All three are tests in [`tests/test_licence.py`], not
-promises. **Source: ECB statistics.**
+modified, and no third-party data. All three are tests in
+[`tests/test_licence.py`](tests/test_licence.py), not promises. **Source: ECB statistics.**
 
 [policy]: https://www.ecb.europa.eu/stats/ecb_statistics/governance_and_quality_framework/html/usage_policy.en.html
