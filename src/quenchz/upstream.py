@@ -134,10 +134,14 @@ class CassetteTransport:
                 f"CassetteTransport(directory=...)"
             )
         self._index = {entry["name"]: entry for entry in json.loads(index.read_text())}
-        # Verified names, so replaying the 1.4 MB full history in a loop hashes it once. The
-        # cache is keyed on the name rather than on the bytes for the obvious reason: hashing
-        # the bytes to decide whether to hash the bytes saves nothing.
-        self._verified: set[str] = set()
+        # THE VERIFIED BYTES, NOT THE VERIFIED NAME, and the difference is what the check above
+        # is worth after the first call. Remembering the name still re-read the file every time
+        # and skipped only the digest, so a body that went bad while the process was up was
+        # served unverified for the life of that process. That is not a hypothetical shape: a
+        # half-finished sync completes while something is running, and what is running here is a
+        # long-lived uvicorn. Holding the bytes hashes the 1.4 MB full history once, serves every
+        # later replay from memory, and drops the per-call read as well.
+        self._verified: dict[str, bytes] = {}
 
     def names(self) -> list[str]:
         return sorted(self._index)
@@ -151,10 +155,11 @@ class CassetteTransport:
             raise KeyError(
                 f"no recording named {name!r}; recorded: {', '.join(sorted(self._index))}"
             ) from None
-        body = (self._dir / f"{name}.body").read_bytes()
-        if name not in self._verified:
+        body = self._verified.get(name)
+        if body is None:
+            body = (self._dir / f"{name}.body").read_bytes()
             self._check(name, entry, body)
-            self._verified.add(name)
+            self._verified[name] = body
         return RawResponse(
             status=int(entry["status"]),
             content_type=str(entry["content_type"]),

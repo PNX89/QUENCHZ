@@ -33,6 +33,16 @@ interface Manifest {
 
 const NO_SUCH_TOOL = 'no tool by that name is available to this caller';
 
+/**
+ * How many checks this file makes, declared rather than discovered at the end of a run.
+ *
+ * The README states this number in prose and nothing could see it drift. `checks` is counted
+ * as the run goes, so deleting one made the proof print "15 of 15 checks passed" and exit 0,
+ * which is a smaller proof reporting success. Declared here, compared against the count below,
+ * and read out of this file by the Python suite so the page and the proof cannot disagree.
+ */
+const DECLARED_CHECKS = 16;
+
 let failures = 0;
 let checks = 0;
 
@@ -239,6 +249,13 @@ async function main(): Promise<number> {
   console.log(`\n${checks - failures} of ${checks} checks passed.`);
   if (failures > 0) console.log(`${failures} FAILED.`);
   console.log('Source: ECB statistics.');
+  if (checks !== DECLARED_CHECKS) {
+    console.log(
+      `${checks} checks ran where ${DECLARED_CHECKS} are declared. The README states that ` +
+        `number, so a proof that has quietly grown or shrunk is a page that is now wrong.`,
+    );
+    return 1;
+  }
   return failures === 0 ? 0 : 1;
 }
 

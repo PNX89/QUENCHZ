@@ -25,7 +25,7 @@ from typing import Any, assert_never
 
 from quenchz.budget import FairBudget
 from quenchz.coverage import reconstruct
-from quenchz.target_calendar import closing_reason
+from quenchz.target_calendar import SERIES_BEGINS, closing_reason
 from quenchz.tools import NO_SUCH_TOOL, ToolRefused, Toolset
 from quenchz.upstream import Outcome, Transport, read
 
@@ -112,12 +112,17 @@ class Gateway:
             for day, value in reading.observations.items()
             if requested_from <= day <= requested_to
         }
-        # The first date this series ever carried a value. This method knows it and
-        # `reconstruct` cannot, so it is passed rather than guessed. Without it, a window
-        # before the series began is certified as that many genuine gaps.
-        series_begins = min(reading.observations) if reading.observations else None
+        # The first date this series ever carried a value, READ FROM THE CALENDAR AND NEVER FROM
+        # THE BODY. It was `min(reading.observations)`, which is the first date of whichever
+        # slice came back, and three of the four recordings are a narrow window. So a window
+        # opening before that slice had its real published rates filed under BEFORE_THE_SERIES,
+        # whose documented meaning is that nothing was ever due, and the certificate said
+        # complete. That is the 1990 defect run backwards: instead of confidently reporting 261
+        # gaps where none was owed, it confidently reported none where sixty had been published.
+        # One series is served here, so its start is a constant. A second series would carry its
+        # own start beside its key rather than have one inferred from a response.
         coverage = reconstruct(
-            requested_from, requested_to, set(delivered), now, series_begins=series_begins
+            requested_from, requested_to, set(delivered), now, series_begins=SERIES_BEGINS
         )
         return {
             "observations": [[day.isoformat(), value] for day, value in sorted(delivered.items())],
