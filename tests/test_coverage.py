@@ -1,4 +1,4 @@
-"""The certificate, tested against the case where each of its three causes is the answer.
+"""The certificate, tested against the case where each of its four causes is the answer.
 
 The tests that matter here are the ones that would pass on a broken implementation if they
 were written lazily. Requesting twelve days and receiving eight looks like a third of the
@@ -10,10 +10,14 @@ one to use.
 
 from __future__ import annotations
 
+import ast
 import csv
 import datetime
+import inspect
 import io
 import pathlib
+import textwrap
+from collections.abc import Callable
 
 import pytest
 from pydantic import ValidationError
@@ -31,6 +35,35 @@ def dates_in(cassette: str) -> set[datetime.date]:
         return set()
     rows = csv.DictReader(io.StringIO(body.decode("utf-8")))
     return {datetime.date.fromisoformat(row["TIME_PERIOD"]) for row in rows}
+
+
+def names_matched_in_case_patterns(func: Callable[..., object]) -> set[str]:
+    """The enum member names an exhaustive `match` actually tests a value against.
+
+    `inspect.getsource(func)` used to be searched as text for `f"ClosingReason.{member.name}"`,
+    which also matches the function's own docstring, an inline comment, or a `#:` note, none of
+    which stop the interpreter falling through: naming a member only in a comment satisfied the
+    old check while leaving it genuinely unhandled. This parses the source instead and reads only
+    the `case` patterns of the one `match` statement, which is the part the interpreter tests a
+    value against, walking `MatchOr` for a `case A | B | C:` union and reading the attribute off
+    each `MatchValue`, which is what a dotted name like `ClosingReason.WEEKEND` compiles to.
+    """
+    source = textwrap.dedent(inspect.getsource(func))
+    matches = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Match)]
+    assert len(matches) == 1, f"{func.__qualname__} has {len(matches)} match statements, not 1"
+
+    matched: set[str] = set()
+
+    def collect(pattern: ast.pattern) -> None:
+        if isinstance(pattern, ast.MatchOr):
+            for alternative in pattern.patterns:
+                collect(alternative)
+        elif isinstance(pattern, ast.MatchValue) and isinstance(pattern.value, ast.Attribute):
+            matched.add(pattern.value.attr)
+
+    for case in matches[0].cases:
+        collect(case.pattern)
+    return matched
 
 
 def test_four_days_missing_across_easter_is_a_complete_response() -> None:
@@ -156,15 +189,15 @@ def test_every_closing_reason_is_named_in_the_match_that_claims_to_be_exhaustive
     Read from the source rather than by calling, because a member added and not handled is a
     static fact. mypy now refuses it too, via `assert_never`, and this says so in the suite so
     that a reader of the tests can see the rule without running the type checker.
-    """
-    import inspect
 
+    Read from the `case` patterns specifically, not from the function's text: a substring search
+    over the whole source is satisfied by a member named in a comment or in this very docstring,
+    which is not an arm and does not stop a real one falling through.
+    """
     from quenchz.target_calendar import ClosingReason
 
-    source = inspect.getsource(coverage_module._classify)
-    unnamed = [
-        member.name for member in ClosingReason if f"ClosingReason.{member.name}" not in source
-    ]
+    matched = names_matched_in_case_patterns(coverage_module._classify)
+    unnamed = [member.name for member in ClosingReason if member.name not in matched]
     assert unnamed == [], (
         f"these closing reasons have no arm in the match: {unnamed}. The match is what decides "
         f"whether a day counts towards what was expected, so a missing one is a miscount rather "
@@ -173,14 +206,27 @@ def test_every_closing_reason_is_named_in_the_match_that_claims_to_be_exhaustive
 
 
 def test_every_absence_reason_is_always_present_in_the_report() -> None:
-    """A missing key and a zero are different things to a caller, so all three are always there."""
+    """A missing key and a zero are different things to a caller, so all four are always there.
+
+    `set(got.absent) == set(Absence)` used to be the assertion, and it cannot fail: `reconstruct`
+    builds `absent` as `dict.fromkeys(Absence, 0)`, so its keys are `Absence`'s members for any
+    `Absence` at all, including one with a single member or none. Checked directly: the identity
+    held with the real four-member enum, with a one-member stand-in, and with an empty one.
+    Asserted here against the certificate's own serialised names instead, which is a literal
+    that a renamed or deleted member actually disagrees with.
+    """
     got = reconstruct(
         datetime.date(2026, 8, 24),
         datetime.date(2026, 8, 24),
         {datetime.date(2026, 8, 24)},
         LONG_AFTER,
     )
-    assert set(got.absent) == set(Absence)
+    assert set(got.model_dump(mode="json")["absent"]) == {
+        "target_closed",
+        "not_yet_published",
+        "no_such_observation",
+        "before_the_series",
+    }
 
 
 def test_the_grace_window_exists_because_the_vendor_said_around() -> None:

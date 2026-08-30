@@ -9,7 +9,11 @@ wasted on an oracle that does not use it.
 
 from __future__ import annotations
 
+import ast
 import datetime
+import inspect
+import textwrap
+from collections.abc import Callable
 
 import pytest
 
@@ -17,6 +21,36 @@ from quenchz.budget import FairBudget, ManualClock
 from quenchz.gateway import OVER_BUDGET, Caller, Gateway, OverBudget
 from quenchz.tools import Tool, ToolRefused, Toolset
 from quenchz.upstream import CassetteTransport, Outcome, RawResponse, Transport, read
+
+
+def names_matched_in_case_patterns(func: Callable[..., object]) -> set[str]:
+    """The enum member names an exhaustive `match` actually tests a value against.
+
+    `inspect.getsource(func)` used to be searched as text for `f"Outcome.{member.name}"`, which
+    also matches the function's own docstring, an inline comment, or a `#:` note, none of which
+    stop the interpreter falling through: naming a member only in a comment satisfied the old
+    check while leaving it genuinely unhandled. This parses the source instead and reads only the
+    `case` patterns of the one `match` statement, which is the part the interpreter tests a value
+    against, walking `MatchOr` for a `case A | B:` union and reading the attribute off each
+    `MatchValue`, which is what a dotted name like `Outcome.WRONG_FORMAT` compiles to.
+    """
+    source = textwrap.dedent(inspect.getsource(func))
+    matches = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Match)]
+    assert len(matches) == 1, f"{func.__qualname__} has {len(matches)} match statements, not 1"
+
+    matched: set[str] = set()
+
+    def collect(pattern: ast.pattern) -> None:
+        if isinstance(pattern, ast.MatchOr):
+            for alternative in pattern.patterns:
+                collect(alternative)
+        elif isinstance(pattern, ast.MatchValue) and isinstance(pattern.value, ast.Attribute):
+            matched.add(pattern.value.attr)
+
+    for case in matches[0].cases:
+        collect(case.pattern)
+    return matched
+
 
 WHEN = datetime.datetime(2026, 8, 26, 12, 0, tzinfo=datetime.UTC)
 
@@ -79,6 +113,10 @@ RESPONSES: dict[Outcome, tuple[RawResponse, str | None]] = {
     Outcome.VENDOR_UNAVAILABLE: (
         RawResponse(503, "text/html", b"<html>service unavailable</html>"),
         "could not answer",
+    ),
+    Outcome.NOT_MODIFIED: (
+        RawResponse(304, "text/html", b""),
+        "did not answer what was asked",
     ),
 }
 
@@ -220,7 +258,17 @@ def test_a_vendor_404_is_not_served_as_an_empty_window() -> None:
 
 
 def test_every_outcome_is_either_answered_or_raised_and_none_falls_through() -> None:
-    """Exhaustive by name, so a new Outcome breaks the build rather than the caller."""
+    """Exhaustive by name, so a new Outcome breaks the build rather than the caller.
+
+    `assert sorted(answered + raised) == CassetteTransport().names()` used to close this out,
+    and it cannot fail: every name in the corpus is appended to exactly one of the two lists by
+    construction, so their sorted union always equals the list they were both built from,
+    whatever the gateway does with any of them. Checked directly: making every non-observation
+    outcome answer instead of raise, and deleting the three assertions above this one, still
+    left it green. What can fail, and is worth asserting, is that the corpus still exercises
+    both branches: a corpus that lost every failing cassette would make this "exhaustive" test
+    exhaustive over one outcome.
+    """
     gateway = _gateway(ManualClock())
     answered, raised = [], []
     for name in CassetteTransport().names():
@@ -233,7 +281,8 @@ def test_every_outcome_is_either_answered_or_raised_and_none_falls_through() -> 
     assert "unknown-series-key" in raised
     assert "format-that-does-not-exist" in raised
     assert "usd-eur-daily-one-month" in answered
-    assert sorted(answered + raised) == CassetteTransport().names(), "one fell through"
+    assert answered, "the corpus holds no cassette this gateway answers; the split is vacuous"
+    assert raised, "the corpus holds no cassette this gateway raises on; the split is vacuous"
 
 
 def test_a_window_before_the_series_is_not_reported_as_gaps_through_the_gateway() -> None:
@@ -320,22 +369,23 @@ def test_every_outcome_is_named_in_the_gateway_match() -> None:
     parameters were wrong. Adding the member type checked and the suite passed, because the
     match ended in a catch-all that gave mypy a total match.
 
-    Read from the source, so a member added without an arm is caught here as well as by mypy,
-    and a reader of the tests can see the rule without running the type checker.
+    Read from the `case` patterns of the match, not from the function's text: a substring search
+    over the whole source is satisfied by a member named in a comment or in this docstring, which
+    is not an arm and does not stop a real one falling through. Reading only the patterns is what
+    a member added without an arm is caught by here as well as by mypy, and a reader of the tests
+    can see the rule without running the type checker.
 
-    THIS IS NOT THE SECOND DEFENCE IT LOOKS LIKE. A substring search cannot tell an arm that
+    THIS IS NOT THE SECOND DEFENCE IT LOOKS LIKE. Reading the patterns cannot tell an arm that
     raises from an arm whose body is `pass`, and neither can `assert_never`, which sees a named
     arm either way. Emptying the REJECTED_PARAMETERS or VENDOR_UNAVAILABLE arm left pytest,
     mypy and ruff all green, and served a vendor outage to a caller as five genuine gaps under
     the ECB's attribution. The behavioural half is
     `test_the_gateway_answers_or_refuses_every_outcome_by_name`.
     """
-    import inspect
-
     from quenchz.upstream import Outcome
 
-    source = inspect.getsource(Gateway.rates_window)
-    unnamed = [member.name for member in Outcome if f"Outcome.{member.name}" not in source]
+    matched = names_matched_in_case_patterns(Gateway.rates_window)
+    unnamed = [member.name for member in Outcome if member.name not in matched]
     assert unnamed == [], (
         f"these outcomes have no arm in the gateway match: {unnamed}. Falling through means "
         f"answering a caller about a response nobody classified"
@@ -350,7 +400,7 @@ def test_every_outcome_has_a_response_here_and_the_set_is_the_one_upstream_decla
     turns that into a failure that says what happened.
     """
     assert set(RESPONSES) == set(Outcome)
-    assert len(RESPONSES) == 6, (
+    assert len(RESPONSES) == 7, (
         f"{len(RESPONSES)} outcomes are covered here; an Outcome was added or removed and this "
         f"file has not been taught what the gateway owes a caller for it"
     )
