@@ -3,9 +3,10 @@
 Everything in this module was derived from the vendor's own series rather than from a
 document, and then checked against the vendor's documentation. The derivation is in
 `tests/test_target_calendar.py`: across 7,140 rows carrying 7,078 observations, from 1999-01-04
-to 2026-08-25, **every** absent weekday is explained by the six rules below and none is left
-over. The two numbers are different and this file is where the difference is explained, so
-calling 7,140 observations here, as it did, was wrong in the sentence introducing the point.
+to 2026-08-25, **every** absent weekday is explained by the six annual rules below plus the
+table of two special closures, and none is left over. The two numbers are different and this
+file is where the difference is explained, so calling 7,140 observations here, as it did, was
+wrong in the sentence introducing the point.
 
 Two facts here are not obvious and both cost a naive implementation real accuracy.
 
@@ -57,9 +58,9 @@ __all__ = [
 class ClosingReason(StrEnum):
     """Why the ECB published no reference rate on a given date.
 
-    A StrEnum rather than a bare string so that a caller cannot invent a seventh reason by
-    typo, and so the exhaustive match in `coverage` fails loudly if a member is added here
-    without teaching that match what to do with it.
+    A StrEnum rather than a bare string so that a caller cannot invent a reason by typo, and so
+    the exhaustive match in `coverage` fails loudly if a member is added here without teaching
+    that match what to do with it.
     """
 
     WEEKEND = "weekend"
